@@ -2,11 +2,17 @@
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-10-15
+
 ### Changed
 
 - Distribute Teams Companion as an explicitly experimental VS Code pre-release, with preview metadata and a verified pre-release VSIX.
 - Download the verified Teams CLI 0.2.2 release, including its sign-in, onboarding and credential-store fixes.
 - Document that lightweight-browser setup remains CLI-only in this experimental extension.
+
+### Fixed
+
+- **installer**: download the all-inclusive CLI 0.2.1 release
 
 ## [0.1.1] - 2026-10-15
 
