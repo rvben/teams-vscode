@@ -13,7 +13,7 @@ import { get } from "node:https";
 import { gunzipSync } from "node:zlib";
 import { extract } from "tar-stream";
 
-export const CLI_VERSION = "0.3.0";
+export const CLI_VERSION = "0.2.1";
 const base = `https://github.com/rvben/teams-cli/releases/download/v${CLI_VERSION}/`;
 const hosts = new Set([
   "github.com",

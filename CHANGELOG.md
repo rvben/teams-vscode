@@ -11,7 +11,7 @@
 
 ### Changed
 
-- Download the matching Teams CLI 0.3.0 release. Older compatible CLIs keep reading and replies, with a direct update action for New Message.
+- Download the matching Teams CLI 0.2.1 release. Older compatible CLIs keep reading and replies, with a direct update action for New Message.
 - Keep compose and refresh in one native toolbar, put search in its own full-width row, and move sidebar layouts to Chats → More Actions → Change Sidebar Layout.
 
 ## 0.1.0
