@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-10-15
+
 ### Added
 
 - Start a conversation from New Message in the Chats toolbar. Search by name or full email, select an exact recipient, then write in an editor tab. Opening a conversation sends nothing and reuses an existing one-to-one chat when available.

@@ -2,7 +2,7 @@
   "name": "teams-companion",
   "displayName": "Teams Companion",
   "description": "Read Teams conversations and reply from editor tabs, using Teams CLI.",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "publisher": "rvben",
   "private": true,
   "license": "MIT",
