@@ -94,7 +94,7 @@ npm run test:host
 npm run package
 ```
 
-The UI suite uses Playwright Chromium; install it with `npx playwright install chromium`, or set `CHROME_PATH` to an existing Chrome for Testing / headless-shell binary. On macOS, avoid launching system Chrome for automated checks. The extension-host suite uses installed VS Code on macOS; set `VSCODE_EXECUTABLE` elsewhere or let the official test runner download it. It uses isolated user data and synthetic fixtures, with real writes disabled in the fake CLI. Desktop setup and connection regression tests use an in-memory host and cannot restart Teams. F5 opens a separate Extension Development Host.
+The UI suite uses Playwright Chromium; install it with `npx playwright install chromium`, or set `CHROME_PATH` to an existing Chrome for Testing / headless-shell binary. On macOS, avoid launching system Chrome for automated checks. The extension-host suite downloads and caches an official VS Code test build; set `VSCODE_EXECUTABLE` to test an existing installation instead. It uses isolated user data and synthetic fixtures, with real writes disabled in the fake CLI. Desktop setup and connection regression tests use an in-memory host and cannot restart Teams. F5 opens a separate Extension Development Host.
 
 The VSIX includes only bundled runtime code, theme stylesheets, the activity-bar SVG, this README, changelog, licenses, and manifest. Tests, synthetic data, local research, design documents, and screenshots are excluded. Packaging is local; it does not publish to the Marketplace.
 

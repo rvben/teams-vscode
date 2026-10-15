@@ -113,8 +113,9 @@ export async function run() {
     "teams.downloadCli",
   ])
     assert(commands.includes(c));
+  await vscode.commands.executeCommand("workbench.view.extension.teams");
   await vscode.commands.executeCommand("teams.chats.focus");
-  const sidebarDeadline = Date.now() + 10_000;
+  const sidebarDeadline = Date.now() + 30_000;
   while (!api.sidebarReady() && Date.now() < sidebarDeadline)
     await new Promise((r) => setTimeout(r, 50));
   assert.equal(
@@ -136,7 +137,7 @@ export async function run() {
     [{ profile: "personal-demo", photos: 1 }],
     "Member photos survive the real CLI normalization and conversation path",
   );
-  const deadline = Date.now() + 10_000;
+  const deadline = Date.now() + 30_000;
   while (!api.webviewsReady() && Date.now() < deadline)
     await new Promise((r) => setTimeout(r, 50));
   assert.equal(

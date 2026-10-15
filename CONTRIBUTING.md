@@ -17,7 +17,7 @@ npm run test:host
 npm run package
 ```
 
-On Linux, run the extension-host suite with `xvfb-run -a npm run test:host` in a graphical-test environment. On macOS, the host suite uses installed VS Code; elsewhere it downloads VS Code unless `VSCODE_EXECUTABLE` is set. UI tests can use an existing Chrome for Testing or headless-shell binary through `CHROME_PATH`. Avoid system Chrome for automated macOS checks.
+On Linux, run the extension-host suite with `xvfb-run -a npm run test:host` in a graphical-test environment. The host suite downloads and caches an official VS Code test build unless `VSCODE_EXECUTABLE` points to an existing installation. UI tests can use an existing Chrome for Testing or headless-shell binary through `CHROME_PATH`. Avoid system Chrome for automated macOS checks.
 
 Press F5 to open an Extension Development Host. Keep tests synthetic: never commit real messages, contacts, tokens, browser profiles, Teams caches, personal filesystem paths, or screenshots from signed-in accounts. Test output, local research, and generated VSIX files belong outside Git.
 

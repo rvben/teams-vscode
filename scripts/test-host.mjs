@@ -20,6 +20,7 @@ await writeFile(
   JSON.stringify({
     "teamsCompanion.cliPath": process.execPath,
     "workbench.startupEditor": "none",
+    "chat.disableAIFeatures": true,
     "extensions.autoUpdate": false,
     "extensions.autoCheckUpdates": false,
     "telemetry.telemetryLevel": "off",
@@ -29,11 +30,7 @@ await writeFile(
 );
 try {
   await runTests({
-    vscodeExecutablePath:
-      process.env.VSCODE_EXECUTABLE ??
-      (process.platform === "darwin"
-        ? "/Applications/Visual Studio Code.app/Contents/MacOS/Code"
-        : undefined),
+    vscodeExecutablePath: process.env.VSCODE_EXECUTABLE,
     extensionDevelopmentPath: root,
     extensionTestsPath: join(root, ".local-research/host-test.cjs"),
     extensionTestsEnv: {
@@ -49,6 +46,10 @@ try {
       "--disable-telemetry",
       "--disable-updates",
       "--disable-extensions",
+      // Keep webview startup deterministic when the isolated window is occluded.
+      "--disable-renderer-backgrounding",
+      "--disable-background-timer-throttling",
+      "--disable-backgrounding-occluded-windows",
       "--disable-workspace-trust",
     ],
   });
