@@ -709,7 +709,7 @@ export async function activate(context: vscode.ExtensionContext) {
         !commands.includes("chats create")
       ) {
         const action = await vscode.window.showWarningMessage(
-          `New Message needs Teams CLI ${CLI_VERSION} or newer. Update the CLI to find people and start conversations.`,
+          "Update Teams CLI to find people and start conversations.",
           "Download CLI Update",
           "Select CLI Executable",
         );

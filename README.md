@@ -1,5 +1,7 @@
 # Teams Companion for VS Code
 
+**Experimental pre-release.** This build is for early testing. Install the VSIX from the GitHub pre-release using **Extensions → … → Install from VSIX**. It is marked as a pre-release in VS Code; it is not a stable Marketplace release.
+
 Read Teams conversations in editor tabs and write a reply beside your code. A theme-aware sidebar lists chats; each conversation stays bound to the profile shown in its title.
 
 This is a desktop VS Code extension backed by [Teams CLI](https://github.com/rvben/teams-cli). It supports Microsoft Graph profiles and the CLI's experimental desktop backend for personal and work/school Teams. Desktop history comes from Teams' local cache and can be incomplete.
@@ -7,13 +9,15 @@ This is a desktop VS Code extension backed by [Teams CLI](https://github.com/rvb
 ## Install locally
 
 1. Install the provided VSIX using **Extensions → … → Install from VSIX**.
-2. Open the Teams activity-bar view. Select an existing CLI executable, or choose **Download verified CLI** to download version 0.2.1 from the CLI's official GitHub release. The extension checks the archive against the release's SHA-256 checksum before extracting it into extension storage.
+2. Open the Teams activity-bar view. Select an existing CLI executable, or choose **Download verified CLI** to download version 0.2.2 from the CLI's official GitHub release. The extension checks the archive against the release's SHA-256 checksum before extracting it into extension storage.
 3. In the sidebar’s **Connection** section, click **Connect Teams Desktop**. Choose personal or work/school and the profile’s access. The extension creates a separate desktop profile if needed, or uses an existing one. To use Microsoft Graph instead, click **Sign in to Microsoft Graph** or **Choose profile**.
 4. Open a conversation from the sidebar or use **Teams: Find Conversation**.
 
 Requires VS Code 1.96 or newer. Teams CLI 0.2.1 or newer stable supports all features, including New Message. Older stable versions from 0.1.11 can still read conversations and reply; New Message offers a CLI update when needed. The built-in download supports macOS Intel/Apple Silicon, Windows x64 (including x64 emulation on ARM64), and Linux x64. On other hosts, supply a compatible CLI yourself. The extension does not run in vscode.dev or other browser-only extension hosts.
 
 ## Choose a connection
+
+The extension's setup currently offers Desktop Teams and Microsoft Graph. Teams CLI 0.2.2 also has a lightweight-browser setup wizard; that wizard is not yet available from the extension.
 
 **Desktop Teams** uses the signed-in desktop app. The sidebar’s **Connection** section always shows the connection state and clickable actions for connecting, disconnecting, or recovering. **Connect Teams Desktop** works even when your current profile uses Graph; you do not need to configure a desktop profile in a terminal first. The setup wizard creates a separate profile with an explicit personal or work/school account selector. Profiles default to read-only. Click **Connect Teams Desktop** to open the local debugging connection; this asks before a possible Teams restart. A restart can end a call. While the port is open, programs running as you can access the signed-in session. Use **Disconnect Teams Desktop** afterward, or **Teams: Recover Desktop Connection** after an interrupted setup. Connecting never happens automatically at extension activation. Setup always asks you to choose Personal or Work/school. Existing CLI profiles may still use Auto-detect; if personal and work/school Teams windows are both open, those profiles refuse to choose between them. Click **Choose Teams account** in the Connection section or conversation error banner. The extension creates or reuses a separate profile for the selected account, keeping existing tabs and drafts tied to their original profile; this does not restart Teams.
 

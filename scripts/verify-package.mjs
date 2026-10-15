@@ -26,6 +26,28 @@ for (const entry of files)
     throw new Error("Unexpected file in VSIX: " + entry.name);
 for (const path of allowed)
   if (!zip.files[path]) throw new Error("Missing file: " + path);
+const packagedManifest = JSON.parse(
+  await zip.files["extension/package.json"].async("string"),
+);
+if (
+  packagedManifest.name !== manifest.name ||
+  packagedManifest.publisher !== manifest.publisher ||
+  packagedManifest.version !== manifest.version ||
+  packagedManifest.preview !== true
+)
+  throw new Error("Experimental extension manifest mismatch.");
+const vsixManifest = await zip.files["extension.vsixmanifest"].async("string");
+const galleryFlags =
+  vsixManifest
+    .match(/<GalleryFlags>([^<]*)<\/GalleryFlags>/)?.[1]
+    .split(/\s+/) ?? [];
+if (
+  !vsixManifest.includes(
+    'Id="Microsoft.VisualStudio.Code.PreRelease" Value="true"',
+  ) ||
+  !galleryFlags.includes("Preview")
+)
+  throw new Error("VSIX must be marked as a preview and pre-release.");
 for (const name of [
   "extension.js",
   "conversation.js",
@@ -51,6 +73,7 @@ console.log(
     files: files.length,
     bytes: bytes.length,
     sha256: createHash("sha256").update(bytes).digest("hex"),
+    preRelease: true,
     verified: true,
   }),
 );

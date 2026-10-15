@@ -1,9 +1,10 @@
 {
   "name": "teams-companion",
-  "displayName": "Teams Companion",
-  "description": "Read Teams conversations and reply from editor tabs, using Teams CLI.",
+  "displayName": "Teams Companion (Experimental)",
+  "description": "Experimental Teams conversations and replies in editor tabs, using Teams CLI.",
   "version": "0.1.1",
   "publisher": "rvben",
+  "preview": true,
   "private": true,
   "license": "MIT",
   "engines": {
@@ -39,7 +40,7 @@
     "test:host": "node scripts/test-host.mjs",
     "vscode:prepublish": "npm run check && npm run build && node scripts/licenses.mjs",
     "format": "prettier --write src test scripts media/conversation.css *.json *.ts *.md .vscode/*.json .github/workflows/*.yml",
-    "package": "vsce package --no-dependencies --allow-missing-repository && node scripts/verify-package.mjs"
+    "package": "vsce package --no-dependencies --allow-missing-repository --pre-release && node scripts/verify-package.mjs"
   },
   "contributes": {
     "commands": [

@@ -1,0 +1,44 @@
+name: Experimental release
+on:
+  push:
+    tags: ["v*"]
+permissions:
+  contents: read
+jobs:
+  check:
+    uses: ./.github/workflows/check.yml
+  release:
+    needs: check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Verify the release version and channel
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          node --input-type=module -e '
+            import { readFileSync } from "node:fs";
+            const pkg = JSON.parse(readFileSync("package.json", "utf8"));
+            if (process.env.RELEASE_TAG !== "v" + pkg.version || pkg.preview !== true) {
+              throw new Error("Release tag must match the experimental package version.");
+            }
+          '
+      - run: npm run package
+      - name: Create checksums
+        run: sha256sum teams-companion-*.vsix > SHA256SUMS
+      - name: Publish the experimental VSIX
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          gh release create "$RELEASE_TAG" teams-companion-*.vsix SHA256SUMS \
+            --verify-tag --prerelease --latest=false \
+            --title "Teams Companion $RELEASE_TAG (Experimental)" \
+            --notes-file CHANGELOG.md
