@@ -111,8 +111,38 @@ export async function run() {
     "teams.setup",
     "teams.connect",
     "teams.downloadCli",
+    "teams.guidedSetup",
+    "teams.signInBrowser",
+    "teams.checkForUpdates",
   ])
     assert(commands.includes(c));
+  const beforeSetup = api.snapshot();
+  let setupTimeout: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      vscode.commands.executeCommand("teams.guidedSetup"),
+      new Promise<never>((_, reject) => {
+        setupTimeout = setTimeout(
+          () =>
+            reject(
+              new Error(
+                "Guided terminal setup did not complete within 45 seconds",
+              ),
+            ),
+          45_000,
+        );
+      }),
+    ]);
+  } finally {
+    clearTimeout(setupTimeout);
+  }
+  await api.settled();
+  assert.deepEqual(
+    api.snapshot(),
+    beforeSetup,
+    "Successful synthetic terminal setup preserves the selected account and returns to chats",
+  );
+  await vscode.commands.executeCommand("workbench.action.closePanel");
   await vscode.commands.executeCommand("workbench.view.extension.teams");
   await vscode.commands.executeCommand("teams.chats.focus");
   const sidebarDeadline = Date.now() + 30_000;

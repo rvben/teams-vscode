@@ -16,20 +16,22 @@ This is an independent project and is not affiliated with Microsoft.
 
 1. Download the VSIX from the [experimental release](https://github.com/rvben/teams-vscode/releases). For an integrity check, compare its SHA-256 hash with the attached `SHA256SUMS`. Install it using **Extensions → … → Install from VSIX**.
 2. Open the Teams activity-bar view. Select an existing CLI executable, or choose **Download verified CLI** to download version 0.2.2 from the CLI's official GitHub release. The extension checks the archive against the release's SHA-256 checksum before extracting it into extension storage.
-3. In the sidebar’s **Connection** section, click **Connect Teams Desktop**. Choose personal or work/school and the profile’s access. The extension creates a separate desktop profile if needed, or uses an existing one. To use Microsoft Graph instead, click **Sign in to Microsoft Graph** or **Choose profile**.
+3. In **Chats → …**, choose **Guided Account Setup**. A dedicated VS Code terminal runs the CLI’s setup wizard, checks which connections work on this computer, and walks through account choice and sign-in. On success, the extension selects the resulting profile and refreshes Chats. You can also use **Connect Teams Desktop** in **Connection** for the signed-in desktop app, or **Advanced Profile Setup** for Graph and manual profiles.
 4. Open a conversation from the sidebar or use **Teams: Find Conversation**.
 
-Requires VS Code 1.96 or newer. Teams CLI 0.2.1 or newer stable supports all features, including New Message. Older stable versions from 0.1.11 can still read conversations and reply; New Message offers a CLI update when needed. The built-in download supports macOS Intel/Apple Silicon, Windows x64 (including x64 emulation on ARM64), and Linux x64. On other hosts, supply a compatible CLI yourself. The extension does not run in vscode.dev or other browser-only extension hosts.
+Requires VS Code 1.96 or newer. Teams CLI 0.2.2 or newer stable supports guided setup. Version 0.2.1 supports New Message. Older stable versions from 0.1.11 can still read conversations and reply; New Message offers a CLI update when needed. The built-in download supports macOS Intel/Apple Silicon, Windows x64 (including x64 emulation on ARM64), and Linux x64. On other hosts, supply a compatible CLI yourself. The extension does not run in vscode.dev or other browser-only extension hosts.
 
 ## Choose a connection
 
-The extension's setup currently offers Desktop Teams and Microsoft Graph. Teams CLI 0.2.2 also has a lightweight-browser setup wizard; that wizard is not yet available from the extension.
+**Guided Account Setup** runs `teams init` in a dedicated terminal with Teams CLI 0.2.2 or newer. The CLI validates installed browsers, account support, saved sessions and available ports before offering a connection. Choose Personal or Work/school; lightweight browser support is personal-only, while supported hosts can use a regular browser for work/school. If setup is interrupted, run it again to recover the saved setup. Closing the terminal cancels the extension’s wait; it does not discard existing profiles.
+
+**Browser connections** use a separate saved Teams session. Use **Connect browser** to reopen it, **Sign in to browser** if authentication expires, and **Disconnect browser** to close it while keeping its saved sign-in. The extension never starts these sessions automatically on activation. Advanced Profile Setup remains available for manual Desktop and Graph profiles.
 
 **Desktop Teams** uses the signed-in desktop app. The sidebar’s **Connection** section always shows the connection state and clickable actions for connecting, disconnecting, or recovering. **Connect Teams Desktop** works even when your current profile uses Graph; you do not need to configure a desktop profile in a terminal first. The setup wizard creates a separate profile with an explicit personal or work/school account selector. Profiles default to read-only. Click **Connect Teams Desktop** to open the local debugging connection; this asks before a possible Teams restart. A restart can end a call. While the port is open, programs running as you can access the signed-in session. Use **Disconnect Teams Desktop** afterward, or **Teams: Recover Desktop Connection** after an interrupted setup. Connecting never happens automatically at extension activation. Setup always asks you to choose Personal or Work/school. Existing CLI profiles may still use Auto-detect; if personal and work/school Teams windows are both open, those profiles refuse to choose between them. Click **Choose Teams account** in the Connection section or conversation error banner. The extension creates or reuses a separate profile for the selected account, keeping existing tabs and drafts tied to their original profile; this does not restart Teams.
 
 **Microsoft Graph** uses a work/school account. Setup opens a dedicated terminal for the CLI's device-code sign-in. Complete sign-in yourself, then refresh the conversation list. The extension does not handle passwords or store access tokens. Run **Teams: Sign In to Graph Profile** if sign-in expires.
 
-The extension runs in the **local UI extension host**. In a WSL, SSH, or container window, it uses the CLI and profiles on the machine running VS Code. On Windows with a WSL workspace, select a Windows `teams.exe` or use the built-in Windows download. Profiles configured only inside WSL are separate; choose or create the corresponding Windows profile. Linux desktop Teams attachment is not supported by the CLI; Graph remains available there.
+The extension runs in the **local UI extension host**. In a WSL, SSH, or container window, it uses the CLI and profiles on the machine running VS Code. On Windows with a WSL workspace, select a Windows `teams.exe` or use the built-in Windows download. Profiles configured only inside WSL are separate; choose or create the corresponding Windows profile. Guided setup uses a local terminal: open a local VS Code window to set up an account or renew browser sign-in, then return to the remote window. Linux desktop Teams attachment is not supported by the CLI; supported browser connections and Graph remain available there.
 
 ## Make the sidebar yours
 
@@ -74,11 +76,16 @@ Drafts stay in memory across refreshes and closing/reopening a tab. They are los
 | `teamsCompanion.repliesEnabled`      | `false` | Permit replies when the CLI profile allows them.                                                                               |
 | `teamsCompanion.pollIntervalSeconds` | `30`    | Visible sidebar and conversation refresh interval, 10–300 seconds. Hidden views pause polling; conversation failures back off. |
 | `teamsCompanion.sidebarLayout`       | `teams` | Choose Teams, Compact, or Comfortable sidebar rows.                                                                            |
+| `teamsCompanion.checkForUpdates`     | `true`  | Check public GitHub releases at most daily when activated; disable automatic checks here.                                      |
 | `teamsCompanion.sendOnEnter`         | `false` | Send with Enter; Shift+Enter inserts a line.                                                                                   |
 
 Run **Teams: Show Connection Diagnostics** for an output channel containing allowlisted host/backend/error metadata. It excludes message bodies, raw CLI output, account identities, tokens, profile names, and chat IDs. For account or cache issues, open Teams itself and refresh there. The extension shows history under the account selected by the CLI; it cannot independently verify a desktop account's identity. Avoid switching Teams accounts during an active send.
 
-No telemetry is collected. Normal reads and sends go through the chosen CLI backend. Explicit download requests contact GitHub using a generic User-Agent. **Open Teams** opens the appropriate Teams website in your browser. No conversation body or identifier is placed in that URL.
+No telemetry is collected. Normal reads and sends go through the chosen CLI backend. Downloads and extension update checks contact GitHub using a generic User-Agent, without Teams account data.
+
+**Teams: Check for Extension Updates** checks manually even when automatic checks are disabled. Notifications include downloadable experimental releases, offer **View release** and **Skip this version**, and never install or execute an update automatically. To update, download the VSIX from the release page and install it through **Extensions → … → Install from VSIX**. Automatic checks run at most once per day when the extension activates; network failures stay quiet and can be retried manually.
+
+**Open Teams** opens the appropriate Teams website in your browser. No conversation body or identifier is placed in that URL.
 
 ## Development
 

@@ -4,14 +4,22 @@ const has = (x, y) => a.includes(x) && a.includes(y);
 const out = (value) => console.log(JSON.stringify(value));
 if (a.includes("schema"))
   out({
-    version: "0.1.11",
+    version: "0.2.2",
     commands: [
       "profile list",
       "chats list",
       "messages list",
       "messages send",
       "messages status",
-    ].map((name) => ({ name })),
+    ]
+      .map((name) => ({ name }))
+      .concat([
+        {
+          name: "init",
+          args: [{ name: "--desktop-client" }, { name: "--auto-start" }],
+        },
+        { name: "desktop login" },
+      ]),
   });
 else if (
   process.env.TEAMS_COMPANION_TEST_MIXED_ACCOUNTS === "1" &&
@@ -121,6 +129,7 @@ else if (has("messages", "list"))
     ],
     source: "desktop_cache",
   });
+else if (a.length === 1 && a[0] === "init") out({ synthetic_setup: true });
 else {
   console.error(
     JSON.stringify({

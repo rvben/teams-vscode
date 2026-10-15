@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   DesktopActions,
   desktopState,
+  closedNativeSession,
   newDesktopProfileName,
   accountProfileArgs,
   accountProfileName,
@@ -234,5 +235,74 @@ test("Account-specific profiles preserve access and port without restarting Team
   assert.equal(
     accountProfileName([], "x".repeat(64), "work-school").length,
     64,
+  );
+});
+
+test("Only a closed native session on the exact managed port can be retired before reconnecting", () => {
+  const config = {
+    backend: "desktop",
+    desktop_client: "native",
+    desktop_port: 19222,
+  };
+  const status = {
+    port: 19222,
+    endpoint_available: false,
+    connection: { status: "no_listener", port: 19222 },
+    management: {
+      managed: true,
+      needs_recovery: false,
+      phase: "active",
+      port: 19222,
+      settings_pending: false,
+    },
+  };
+  assert(closedNativeSession(config, status));
+  for (const client of ["browser", "browser_core", "unknown"])
+    assert(!closedNativeSession({ ...config, desktop_client: client }, status));
+  for (const patch of [
+    { endpoint_available: true },
+    { port: 19223 },
+    { connection: { status: "unsafe_listener", port: 19222 } },
+    { connection: { status: "no_listener", port: 19223 } },
+    ...[
+      { needs_recovery: true },
+      { settings_pending: true },
+      { phase: "starting" },
+      { port: 19223 },
+      { managed: false },
+    ].map((m) => ({ management: { ...status.management, ...m } })),
+  ])
+    assert(!closedNativeSession(config, { ...status, ...patch }));
+  assert(!closedNativeSession({}, status));
+  assert(!closedNativeSession(config, {}));
+});
+
+test("Browser account settings retain the client and auto-start while unsupported combinations are refused", () => {
+  for (const client of ["browser", "browser_core"]) {
+    const config = {
+      backend: "desktop",
+      desktop_client: client,
+      desktop_port: 19223,
+      read_only: false,
+      browser_auto_start: true,
+    };
+    const args = accountProfileArgs(config, "personal");
+    assert.equal(
+      args[args.indexOf("--desktop-client") + 1],
+      client.replace("_", "-"),
+    );
+    assert(args.includes("--auto-start"));
+    assert(args.includes("--allow-send"));
+    if (client === "browser_core")
+      assert.throws(
+        () => accountProfileArgs(config, "work-school"),
+        /personal/,
+      );
+  }
+  assert.throws(() =>
+    accountProfileArgs(
+      { backend: "desktop", desktop_client: "unknown", desktop_port: 19223 },
+      "personal",
+    ),
   );
 });

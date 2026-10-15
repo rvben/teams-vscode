@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Added
+
+- Guided Account Setup opens the CLI’s validated setup wizard in a dedicated VS Code terminal and returns to Chats on success.
+- Browser connection actions reopen saved sessions, renew sign-in and disconnect with accurate browser-specific explanations.
+- Optional daily GitHub release notifications, a manual update check, and per-version skipping. Updates remain manual and no Teams data is sent.
+
+### Fixed
+
+- Reconnect a closed native Teams session through the CLI’s normal cleanup rather than reporting a misleading busy error from its stale active record.
+- Preserve browser client and auto-start settings when deriving account profiles; refuse unsupported work/school lightweight-browser combinations.
+
 ## [0.1.2] - 2026-10-15
 
 ### Changed

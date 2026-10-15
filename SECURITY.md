@@ -4,7 +4,7 @@ Teams Companion is experimental. Security fixes target the latest published pre-
 
 Report vulnerabilities through [GitHub's private vulnerability reporting](https://github.com/rvben/teams-vscode/security/advisories/new). Include affected versions, the impact, and reproduction steps using synthetic data. Keep account credentials, session tokens, message contents, and account identifiers out of public issues.
 
-The extension has no telemetry. It invokes a local CLI, renders received messages as inert text, and allows only local raster avatars. CLI downloads require HTTPS and checksum verification. Replies are opt-in, and uncertain submissions are never automatically retried.
+The extension has no telemetry. Optional daily update checks request only public GitHub release metadata with a generic User-Agent; no Teams data or account identifiers are sent. Updates open a fixed project release page only after a click and are installed manually. Disable checks with `teamsCompanion.checkForUpdates`. Guided setup and browser sign-in run the trusted local CLI in an integrated terminal; complete authentication yourself. It invokes a local CLI, renders received messages as inert text, and allows only local raster avatars. CLI downloads require HTTPS and checksum verification. Replies are opt-in, and uncertain submissions are never automatically retried.
 
 Desktop mode opens a local debugging connection to the signed-in Teams app after confirmation. Other processes running as the same user may access that session while the connection is enabled. Disconnect from the extension when finished. The extension cannot independently verify the account identity exposed by Teams' desktop cache.
 

@@ -27,6 +27,6 @@ Changes should include the relevant checks and a Conventional Commit message. Pu
 
 Use `vership status`, `vership config show`, and the installed command's `--help` before release work. Prepare with `vership bump patch --prepare`, then review and test the prepared commit. Do not bump a prepared version again.
 
-After publication is approved, run `vership release` on `main`. The version-tag workflow runs platform checks, builds a pre-release VSIX, and publishes a GitHub pre-release with `SHA256SUMS`. It does not publish to the Marketplace. Wait for the workflow and run `vership verify <version> --targets git,github` before declaring the release complete.
+After publication is approved, run `vership release` on `main`. The version-tag workflow runs platform checks, builds a pre-release VSIX, and publishes a GitHub pre-release with `SHA256SUMS`. It does not publish to the Marketplace. Wait for the workflow and run `vership verify <version> --targets tag,release` before declaring the release complete.
 
 The VSIX packager verifies a strict file allowlist, version and channel metadata, and bundle contents. The GitHub workflow pins its actions to immutable commits. Releases must preserve the tested commit and pass the repository's privacy review, including Git history and the extracted VSIX.

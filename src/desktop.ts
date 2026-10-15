@@ -14,6 +14,31 @@ export function desktopState(value: unknown): DesktopState {
   return "unavailable";
 }
 
+// A closed native app can leave an active management record behind. Let the
+// CLI's normal disconnect retire it; interrupted setup and foreign ports must
+// retain their recovery path.
+export function closedNativeSession(config: unknown, status: unknown): boolean {
+  const c = obj(config),
+    s = obj(status),
+    m = obj(s.management);
+  return (
+    c.backend === "desktop" &&
+    (c.desktop_client === undefined || c.desktop_client === "native") &&
+    Number.isInteger(c.desktop_port) &&
+    Number(c.desktop_port) >= 1024 &&
+    Number(c.desktop_port) <= 65535 &&
+    s.port === c.desktop_port &&
+    s.endpoint_available === false &&
+    obj(s.connection).status === "no_listener" &&
+    obj(s.connection).port === c.desktop_port &&
+    m.managed === true &&
+    m.needs_recovery === false &&
+    m.settings_pending === false &&
+    m.phase === "active" &&
+    m.port === c.desktop_port
+  );
+}
+
 interface DesktopHost {
   profiles(): Promise<Profile[]>;
   current(): Profile | undefined;
@@ -88,6 +113,14 @@ export function accountProfileArgs(
     Number(c.desktop_port) > 65535
   )
     throw new Error("Refresh the desktop profile before choosing an account.");
+  const client =
+    c.desktop_client === "browser_core" ? "browser-core" : c.desktop_client;
+  if (client === "browser-core" && account !== "personal")
+    throw new Error(
+      "Lightweight browser connections support personal accounts. Set up a separate browser connection for work or school.",
+    );
+  if (client && !["native", "browser", "browser-core"].includes(String(client)))
+    throw new Error("Refresh this connection before choosing an account.");
   return [
     "init",
     "--backend",
@@ -97,6 +130,12 @@ export function accountProfileArgs(
     String(c.desktop_port),
     "--desktop-account",
     account,
+    ...(client === "browser" || client === "browser-core"
+      ? ["--desktop-client", client]
+      : []),
+    ...(client !== "native" && client && c.browser_auto_start === true
+      ? ["--auto-start"]
+      : []),
     ...(c.read_only === false ? ["--allow-send"] : []),
   ];
 }

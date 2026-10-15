@@ -25,8 +25,15 @@ import { Sidebar } from "./sidebar";
 import { sidebarLayout } from "./sidebar-model";
 import { withMemberAvatars } from "./conversation-model";
 import {
+  GuidedSetup,
+  completedProfile,
+  supportsGuidedSetup,
+} from "./guided-setup";
+import { UpdateChecker, fetchReleases } from "./updates";
+import {
   DesktopActions,
   desktopState,
+  closedNativeSession,
   newDesktopProfileName,
   accountProfileArgs,
   accountProfileName,
@@ -69,6 +76,7 @@ export async function activate(context: vscode.ExtensionContext) {
     ready = false,
     connectionState = "checking",
     connectionBusy = false,
+    browserConnection = false,
     sidebarError = "",
     sidebarCached = false,
     selectedChat = "";
@@ -136,7 +144,7 @@ export async function activate(context: vscode.ExtensionContext) {
           await chooseDesktopAccount();
           break;
         case "setup":
-          await setup();
+          await guidedSetup.execute();
           break;
       }
     },
@@ -245,7 +253,7 @@ export async function activate(context: vscode.ExtensionContext) {
     connectionState = state;
     renderSidebar();
     connectionView.description = active
-      ? `${active.name} · ${active.backend === "desktop" ? "Desktop" : "Graph"}`
+      ? `${active.accountLabel ?? active.name} · ${active.backend === "desktop" ? (browserConnection ? "Browser" : "Desktop") : "Graph"}`
       : undefined;
     void vscode.commands.executeCommand(
       "setContext",
@@ -253,21 +261,45 @@ export async function activate(context: vscode.ExtensionContext) {
       state,
     );
   }
+  async function connectionConfig(profile = active) {
+    return profile?.backend === "desktop"
+      ? obj(
+          await (
+            await getCli()
+          ).call(["config", "show"], { profile: profile.name }),
+        )
+      : {};
+  }
   async function readConnection(selected: Profile | undefined, run: number) {
     if (!selected || selected.backend !== "desktop") {
-      if (run === generation) showConnection(selected ? "graph" : "setup");
+      if (run === generation) {
+        browserConnection = false;
+        await vscode.commands.executeCommand(
+          "setContext",
+          "teams.browserConnection",
+          false,
+        );
+        showConnection(selected ? "graph" : "setup");
+      }
       return;
     }
     try {
-      const state = desktopState(
-        await (
-          await getCli()
-        ).call(["desktop", "status"], {
-          profile: selected.name,
-          timeout: 15_000,
-        }),
+      const api = await getCli();
+      const config = await connectionConfig(selected);
+      if (run !== generation) return;
+      selected.accountLabel = accountLabel(selected.backend, config);
+      browserConnection = isBrowser(config);
+      await vscode.commands.executeCommand(
+        "setContext",
+        "teams.browserConnection",
+        browserConnection,
       );
-      if (run === generation) showConnection(state);
+      summary();
+      const status = await api.call(["desktop", "status"], {
+        profile: selected.name,
+        timeout: 15_000,
+      });
+      if (run === generation) showConnection(desktopState(status));
     } catch {
       if (run === generation) showConnection("unavailable");
     }
@@ -341,18 +373,6 @@ export async function activate(context: vscode.ExtensionContext) {
       await readConnection(active, run);
       if (run !== generation || !active) return;
       const selected = active;
-      if (selected.backend === "desktop") {
-        const config = await (
-          await getCli()
-        ).call(["config", "show"], {
-          profile: selected.name,
-          signal: abort.signal,
-          timeout: 15_000,
-        });
-        if (run !== generation) return;
-        selected.accountLabel = accountLabel(selected.backend, config);
-        summary();
-      }
       const targetCount = more ? 50 : Math.max(50, chats.length);
       sidebarError = "";
       renderSidebar();
@@ -1003,8 +1023,8 @@ export async function activate(context: vscode.ExtensionContext) {
             : []),
         ],
         {
-          title: "Connect Teams Desktop",
-          placeHolder: "Choose the desktop profile to use",
+          title: "Connect Teams",
+          placeHolder: "Choose the connection to use",
         },
       );
       return selected?.value;
@@ -1017,12 +1037,21 @@ export async function activate(context: vscode.ExtensionContext) {
     },
     confirm: async (action, profile) => {
       if (action === "recover") return true;
+      const config = await connectionConfig(profile);
+      const browser = isBrowser(config);
       const label =
         action === "connect"
-          ? "Connect Teams Desktop"
-          : "Disconnect Teams Desktop";
-      const text =
-        action === "connect"
+          ? browser
+            ? "Connect Teams Browser"
+            : "Connect Teams Desktop"
+          : browser
+            ? "Disconnect Teams Browser"
+            : "Disconnect Teams Desktop";
+      const text = browser
+        ? action === "connect"
+          ? "Open your separate Teams browser session? Its local debugging port lets programs running as you read chats and send messages. Your regular browser and Teams app stay open."
+          : "Close the separate Teams browser? Your saved sign-in is kept for next time. Your regular browser and Teams app stay open."
+        : action === "connect"
           ? "Connecting may restart Teams and end a call. While its local debugging port is open, programs running as you can read chats and send messages. Disconnect closes the managed debugging session."
           : "Disconnecting restarts Teams normally and may end a call. Unmanaged sessions are left for manual recovery.";
       return !!(await vscode.window.showWarningMessage(
@@ -1034,20 +1063,33 @@ export async function activate(context: vscode.ExtensionContext) {
     select: selectProfile,
     run: async (action, profile) => {
       showConnection("busy");
+      const config = await connectionConfig(profile);
+      const label = isBrowser(config) ? "browser" : "desktop";
       await vscode.window.withProgress(
         {
           location: vscode.ProgressLocation.Notification,
-          title: `Teams: ${action} desktop`,
+          title: `Teams: ${action} ${label}`,
           cancellable: false,
         },
-        () =>
-          getCli().then((api) =>
-            api.call(["--yes", "desktop", action], {
+        async () => {
+          const api = await getCli();
+          if (action === "connect" && !isBrowser(config)) {
+            const status = await api.call(["desktop", "status"], {
               profile: profile.name,
-              mutation: true,
-              timeout: 120_000,
-            }),
-          ),
+            });
+            if (closedNativeSession(config, status))
+              await api.call(["--yes", "desktop", "disconnect"], {
+                profile: profile.name,
+                mutation: true,
+                timeout: 120_000,
+              });
+          }
+          await api.call(["--yes", "desktop", action], {
+            profile: profile.name,
+            mutation: true,
+            timeout: 120_000,
+          });
+        },
       );
       for (const tab of tabs.values())
         if (tab.session.profile.name === profile.name && tab.panel?.visible)
@@ -1063,6 +1105,149 @@ export async function activate(context: vscode.ExtensionContext) {
     },
     refresh: () => refresh(),
   });
+  function isBrowser(config: Record<string, unknown>) {
+    return ["browser", "browser_core", "browser-core"].includes(
+      str(config.desktop_client),
+    );
+  }
+  const guidedSetup = new GuidedSetup({
+    profiles: async () =>
+      profiles(await (await getCli()).call(["profile", "list"])),
+    launch: async (action, profile) => {
+      if (connectionBusy) {
+        await vscode.window.showInformationMessage(
+          "Wait for the current connection action to finish, then start setup again.",
+        );
+        return;
+      }
+      let api = await getCli();
+      if (!supportsGuidedSetup(version, await api.call(["schema"]))) {
+        const choice = await vscode.window.showInformationMessage(
+          "Guided browser setup needs Teams CLI 0.2.2 or newer. Update the CLI to check supported connections on this computer.",
+          "Update CLI",
+        );
+        if (!choice) return;
+        await vscode.commands.executeCommand("teams.downloadCli");
+        api = await getCli();
+        if (!supportsGuidedSetup(version, await api.call(["schema"]))) return;
+      }
+      if (
+        action === "browserSignIn" &&
+        (!profile || !isBrowser(await connectionConfig(profile)))
+      )
+        throw new Error(
+          "Select a browser connection first, or run Teams: Guided Account Setup.",
+        );
+      const args =
+        action === "setup"
+          ? ["init"]
+          : ["--profile", profile!.name, "desktop", "login"];
+      // Native terminals use the remote workspace host in SSH/WSL windows.
+      // Never pass a trusted local executable path to a different computer.
+      if (vscode.env.remoteName) {
+        await vscode.window.showInformationMessage(
+          "Open a local VS Code window to run guided account setup. Once connected, your chats remain available in this remote window.",
+        );
+        return;
+      }
+      let terminal: vscode.Terminal | undefined;
+      let finish!: (code: number | undefined) => void;
+      const finished = new Promise<number | undefined>((resolve) => {
+        finish = resolve;
+      });
+      const closed = vscode.window.onDidCloseTerminal((value) => {
+        if (value !== terminal) return;
+        closed.dispose();
+        finish(value.exitStatus?.code);
+      });
+      context.subscriptions.push(closed);
+      try {
+        terminal = vscode.window.createTerminal({
+          name:
+            action === "setup"
+              ? "Teams account setup"
+              : "Teams browser sign-in",
+          shellPath: api.executable,
+          shellArgs: [
+            ...(context.extensionMode === vscode.ExtensionMode.Test &&
+            process.env.TEAMS_COMPANION_TEST_FIXTURE
+              ? [process.env.TEAMS_COMPANION_TEST_FIXTURE]
+              : []),
+            ...args,
+          ],
+          isTransient: true,
+        });
+        terminal.show();
+      } catch (error) {
+        closed.dispose();
+        throw error;
+      }
+      return { finished, reveal: () => terminal?.show() };
+    },
+    complete: async (before) => {
+      const after = profiles(await (await getCli()).call(["profile", "list"]));
+      await loadProfiles(completedProfile(before, after, active?.name));
+      await refresh();
+      await vscode.commands.executeCommand("teams.chats.focus");
+    },
+    failed: async () => {
+      await refresh();
+      await vscode.window.showWarningMessage(
+        "Teams setup did not finish. Run Guided Account Setup again to retry or recover a saved setup. Your existing connections are preserved.",
+      );
+    },
+  });
+  context.subscriptions.push(guidedSetup);
+
+  const updates = new UpdateChecker(
+    context.extension.packageJSON.version,
+    context.extension.packageJSON.preview === true,
+    {
+      get: <T>(key: string) => context.globalState.get<T>(key),
+      set: async (key, value) => {
+        await context.globalState.update(key, value);
+      },
+      enabled: () => settings().get<boolean>("checkForUpdates", true),
+      fetch: fetchReleases,
+      available: async (release) => {
+        const choice = await vscode.window.showInformationMessage(
+          `Teams Companion ${release.version}${release.experimental ? " (experimental)" : ""} is available. Installed: ${context.extension.packageJSON.version}.`,
+          "View release",
+          "Skip this version",
+        );
+        return choice === "View release"
+          ? "open"
+          : choice === "Skip this version"
+            ? "skip"
+            : undefined;
+      },
+      open: async (url) => {
+        await vscode.env.openExternal(vscode.Uri.parse(url));
+      },
+      current: async () => {
+        await vscode.window.showInformationMessage(
+          "Teams Companion is up to date. No newer downloadable release is available.",
+        );
+      },
+      failed: async () => {
+        await vscode.window
+          .showWarningMessage(
+            "Could not check for Teams Companion updates. Try again later or visit the GitHub releases page.",
+            "View releases",
+          )
+          .then(async (choice) => {
+            if (choice)
+              await vscode.env.openExternal(
+                vscode.Uri.parse(
+                  "https://github.com/rvben/teams-vscode/releases",
+                ),
+              );
+          });
+      },
+      now: Date.now,
+    },
+  );
+  context.subscriptions.push(updates);
   function connection(
     action: "connect" | "disconnect" | "recover",
     profile?: Profile,
@@ -1080,6 +1265,14 @@ export async function activate(context: vscode.ExtensionContext) {
       const config = obj(
         await api.call(["config", "show"], { profile: profile.name }),
       );
+      if (isBrowser(config)) {
+        const choice = await vscode.window.showInformationMessage(
+          "Each browser connection keeps its own account and saved sign-in. Set up a separate connection to use another account.",
+          "Set up another account",
+        );
+        if (choice) await guidedSetup.execute();
+        return;
+      }
       const account = await vscode.window.showQuickPick(
         [
           {
@@ -1149,8 +1342,11 @@ export async function activate(context: vscode.ExtensionContext) {
   }
   async function signIn(profile = active) {
     if (!profile) throw new Error("Set up a profile first.");
-    if (profile.backend !== "graph")
+    if (profile.backend !== "graph") {
+      if (isBrowser(await connectionConfig(profile)))
+        return guidedSetup.execute("browserSignIn", profile);
       throw new Error("Sign in directly in Teams for desktop profiles.");
+    }
     const api = await getCli();
     const terminal = vscode.window.createTerminal({
       name: `Teams sign-in · ${profile.name}`,
@@ -1307,6 +1503,11 @@ export async function activate(context: vscode.ExtensionContext) {
   register("teams.loadMoreChats", () => refresh(true));
   register("teams.selectProfile", chooseProfile);
   register("teams.setup", () => setup());
+  register("teams.guidedSetup", () => guidedSetup.execute());
+  register("teams.signInBrowser", () =>
+    guidedSetup.execute("browserSignIn", active),
+  );
+  register("teams.checkForUpdates", () => updates.check(true));
   register("teams.enableReplies", enableReplies);
   register("teams.openTeams", () => openTeams());
   register("teams.signIn", () => signIn());
@@ -1370,6 +1571,8 @@ export async function activate(context: vscode.ExtensionContext) {
         tabs.clear();
         void refresh();
       } else if (e.affectsConfiguration("teamsCompanion")) {
+        if (e.affectsConfiguration("teamsCompanion.checkForUpdates"))
+          void updates.check();
         renderSidebar();
         scheduleSidebar();
         for (const tab of tabs.values()) {
@@ -1393,6 +1596,8 @@ export async function activate(context: vscode.ExtensionContext) {
     },
   });
   void refresh();
+  if (context.extensionMode === vscode.ExtensionMode.Production)
+    void updates.check();
   scheduleSidebar();
   // Only the isolated extension-host suite receives this inspection surface.
   if (context.extensionMode === vscode.ExtensionMode.Test)

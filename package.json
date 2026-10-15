@@ -90,7 +90,7 @@
       },
       {
         "command": "teams.setup",
-        "title": "Set Up a Profile",
+        "title": "Advanced Profile Setup",
         "category": "Teams",
         "enablement": "!teams.connectionBusy"
       },
@@ -108,21 +108,21 @@
       },
       {
         "command": "teams.connect",
-        "title": "Connect Teams Desktop",
+        "title": "Connect Teams",
         "category": "Teams",
         "icon": "$(plug)",
         "enablement": "!teams.connectionBusy"
       },
       {
         "command": "teams.disconnect",
-        "title": "Disconnect Teams Desktop",
+        "title": "Disconnect Teams",
         "category": "Teams",
         "icon": "$(debug-disconnect)",
         "enablement": "!teams.connectionBusy"
       },
       {
         "command": "teams.recover",
-        "title": "Recover Desktop Connection",
+        "title": "Recover Teams Connection",
         "category": "Teams",
         "enablement": "!teams.connectionBusy"
       },
@@ -156,6 +156,23 @@
         "title": "Choose Teams Account",
         "category": "Teams",
         "enablement": "!teams.connectionBusy"
+      },
+      {
+        "command": "teams.guidedSetup",
+        "title": "Guided Account Setup",
+        "category": "Teams",
+        "enablement": "!teams.connectionBusy"
+      },
+      {
+        "command": "teams.signInBrowser",
+        "title": "Sign In to Teams Browser",
+        "category": "Teams",
+        "enablement": "teams.browserConnection && !teams.connectionBusy"
+      },
+      {
+        "command": "teams.checkForUpdates",
+        "title": "Check for Extension Updates",
+        "category": "Teams"
       }
     ],
     "viewsContainers": {
@@ -189,43 +206,43 @@
       },
       {
         "view": "teams.connection",
-        "contents": "Connect the account already signed in to Teams.\n[Download verified CLI](command:teams.downloadCli)\n[Select CLI executable](command:teams.configureCli)",
+        "contents": "Choose a trusted CLI to connect Teams.\n[Download verified CLI](command:teams.downloadCli)\n[Select CLI executable](command:teams.configureCli)",
         "when": "teams.connectionState == cli"
       },
       {
         "view": "teams.connection",
-        "contents": "Use the account signed in to Teams Desktop.\n[Connect Teams Desktop](command:teams.connect)\n[Set up a profile](command:teams.setup)",
+        "contents": "Choose a personal or work/school account and a supported connection.\n[Guided account setup](command:teams.guidedSetup)\n[Connect Teams Desktop](command:teams.connect)",
         "when": "teams.connectionState == setup"
       },
       {
         "view": "teams.connection",
-        "contents": "Use your signed-in desktop app, or sign in with Microsoft Graph.\n[Connect Teams Desktop](command:teams.connect)\n[Sign in to Microsoft Graph](command:teams.signIn)\n[Choose profile](command:teams.selectProfile)",
+        "contents": "Use your signed-in desktop app, or sign in with Microsoft Graph.\n[Connect Teams Desktop](command:teams.connect)\n[Sign in to Microsoft Graph](command:teams.signIn)\n[Choose profile](command:teams.selectProfile)\n[Guided account setup](command:teams.guidedSetup)",
         "when": "teams.connectionState == graph"
       },
       {
         "view": "teams.connection",
-        "contents": "Desktop connection is closed. Connect to load chats from the signed-in Teams app.\n[Connect Teams Desktop](command:teams.connect)\n[Choose profile](command:teams.selectProfile)",
-        "when": "teams.connectionState == disconnected"
+        "contents": "Desktop connection is closed. Connect to load chats from the signed-in Teams app.\n[Connect Teams Desktop](command:teams.connect)\n[Choose profile](command:teams.selectProfile)\n[Guided account setup](command:teams.guidedSetup)",
+        "when": "teams.connectionState == disconnected && !teams.browserConnection"
       },
       {
         "view": "teams.connection",
         "contents": "Desktop connection is open. Chats come from Teams\u2019 local cache.\n[Refresh conversations](command:teams.refresh)\n[Disconnect Teams Desktop](command:teams.disconnect)\n[Choose profile](command:teams.selectProfile)\nAccount: [Personal or work/school](command:teams.selectDesktopAccount)",
-        "when": "teams.connectionState == connected"
+        "when": "teams.connectionState == connected && !teams.browserConnection"
       },
       {
         "view": "teams.connection",
         "contents": "An interrupted desktop setup needs attention. Recover its settings, then disconnect before connecting again.\n[Recover desktop connection](command:teams.recover)\n[Disconnect Teams Desktop](command:teams.disconnect)\n[Show diagnostics](command:teams.diagnostics)",
-        "when": "teams.connectionState == recovery"
+        "when": "teams.connectionState == recovery && !teams.browserConnection"
       },
       {
         "view": "teams.connection",
-        "contents": "The desktop connection could not be verified. Try connecting, or inspect its status.\n[Connect Teams Desktop](command:teams.connect)\n[Show diagnostics](command:teams.diagnostics)\n[Recover desktop connection](command:teams.recover)\n[Choose profile](command:teams.selectProfile)",
-        "when": "teams.connectionState == unavailable"
+        "contents": "The desktop connection could not be verified. Try connecting, or inspect its status.\n[Connect Teams Desktop](command:teams.connect)\n[Show diagnostics](command:teams.diagnostics)\n[Recover desktop connection](command:teams.recover)\n[Choose profile](command:teams.selectProfile)\n[Guided account setup](command:teams.guidedSetup)",
+        "when": "teams.connectionState == unavailable && !teams.browserConnection"
       },
       {
         "view": "teams.connection",
         "contents": "Updating the desktop connection\u2026 Teams may restart.",
-        "when": "teams.connectionState == busy"
+        "when": "teams.connectionState == busy && !teams.browserConnection"
       },
       {
         "view": "teams.chats",
@@ -236,6 +253,31 @@
         "view": "teams.connection",
         "contents": "Desktop is connected, but more than one Teams account is available. Choose the account to load.\n[Choose Teams account](command:teams.selectDesktopAccount)\n[Disconnect Teams Desktop](command:teams.disconnect)",
         "when": "teams.connectionState == account"
+      },
+      {
+        "view": "teams.connection",
+        "contents": "Your separate Teams browser is connected.\n[Refresh conversations](command:teams.refresh)\n[Sign in to browser](command:teams.signInBrowser)\n[Disconnect browser](command:teams.disconnect)\n[Choose profile](command:teams.selectProfile)\n[Set up another account](command:teams.guidedSetup)",
+        "when": "teams.connectionState == connected && teams.browserConnection"
+      },
+      {
+        "view": "teams.connection",
+        "contents": "Your Teams browser is closed. Reopen its saved session or sign in again.\n[Connect browser](command:teams.connect)\n[Sign in to browser](command:teams.signInBrowser)\n[Guided account setup](command:teams.guidedSetup)",
+        "when": "teams.connectionState == disconnected && teams.browserConnection"
+      },
+      {
+        "view": "teams.connection",
+        "contents": "The browser connection needs attention. Recover it before signing in again.\n[Recover browser connection](command:teams.recover)\n[Show diagnostics](command:teams.diagnostics)",
+        "when": "teams.connectionState == recovery && teams.browserConnection"
+      },
+      {
+        "view": "teams.connection",
+        "contents": "The browser connection could not be verified. Sign in again or inspect its status.\n[Sign in to browser](command:teams.signInBrowser)\n[Show diagnostics](command:teams.diagnostics)\n[Guided account setup](command:teams.guidedSetup)",
+        "when": "teams.connectionState == unavailable && teams.browserConnection"
+      },
+      {
+        "view": "teams.connection",
+        "contents": "Updating your Teams browser connection\u2026",
+        "when": "teams.connectionState == busy && teams.browserConnection"
       }
     ],
     "menus": {
@@ -266,7 +308,7 @@
           "group": "navigation@3"
         },
         {
-          "command": "teams.setup",
+          "command": "teams.guidedSetup",
           "when": "view == teams.chats",
           "group": "connection@3"
         },
@@ -296,14 +338,29 @@
           "group": "connection@2"
         },
         {
-          "command": "teams.setup",
+          "command": "teams.guidedSetup",
           "when": "view == teams.connection",
           "group": "connection@3"
         },
         {
           "command": "teams.selectDesktopAccount",
-          "when": "view == teams.connection && teams.connectionState != graph && teams.connectionState != cli",
+          "when": "view == teams.connection && teams.connectionState != graph && teams.connectionState != cli && !teams.browserConnection",
           "group": "connection@0"
+        },
+        {
+          "command": "teams.setup",
+          "when": "view == teams.connection",
+          "group": "connection@4"
+        },
+        {
+          "command": "teams.signInBrowser",
+          "when": "view == teams.connection && teams.browserConnection",
+          "group": "connection@1"
+        },
+        {
+          "command": "teams.checkForUpdates",
+          "when": "view == teams.connection",
+          "group": "help@1"
         }
       ]
     },
@@ -350,6 +407,12 @@
           ],
           "default": "teams",
           "description": "Conversation sidebar layout. Changes apply immediately and keep open tabs and drafts intact."
+        },
+        "teamsCompanion.checkForUpdates": {
+          "type": "boolean",
+          "default": true,
+          "scope": "application",
+          "description": "Check public GitHub release metadata at most once a day when Teams Companion activates. Includes experimental releases for this experimental extension. No Teams account data is sent. Updates are installed manually from the release page."
         }
       }
     }
