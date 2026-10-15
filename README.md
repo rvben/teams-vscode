@@ -1,14 +1,20 @@
 # Teams Companion for VS Code
 
-**Experimental pre-release.** This build is for early testing. Install the VSIX from the GitHub pre-release using **Extensions → … → Install from VSIX**. It is marked as a pre-release in VS Code; it is not a stable Marketplace release.
+**Experimental pre-release.** [Download the experimental build](https://github.com/rvben/teams-vscode/releases) and install its VSIX using **Extensions → … → Install from VSIX**. The package carries pre-release metadata and an Experimental display name. Distribution is through GitHub; installing the VSIX does not enroll you in automatic Marketplace updates.
 
 Read Teams conversations in editor tabs and write a reply beside your code. A theme-aware sidebar lists chats; each conversation stays bound to the profile shown in its title.
 
 This is a desktop VS Code extension backed by [Teams CLI](https://github.com/rvben/teams-cli). It supports Microsoft Graph profiles and the CLI's experimental desktop backend for personal and work/school Teams. Desktop history comes from Teams' local cache and can be incomplete.
 
+- Keep conversations in editor tabs, with plain-text replies and a deliberate send shortcut.
+- Choose a Teams, Compact, or Comfortable sidebar with local avatars, previews, and search.
+- Start a one-to-one conversation with New Message, with guards against uncertain sends and duplicate requests.
+
+This is an independent project and is not affiliated with Microsoft.
+
 ## Install locally
 
-1. Install the provided VSIX using **Extensions → … → Install from VSIX**.
+1. Download the VSIX from the [experimental release](https://github.com/rvben/teams-vscode/releases). For an integrity check, compare its SHA-256 hash with the attached `SHA256SUMS`. Install it using **Extensions → … → Install from VSIX**.
 2. Open the Teams activity-bar view. Select an existing CLI executable, or choose **Download verified CLI** to download version 0.2.2 from the CLI's official GitHub release. The extension checks the archive against the release's SHA-256 checksum before extracting it into extension storage.
 3. In the sidebar’s **Connection** section, click **Connect Teams Desktop**. Choose personal or work/school and the profile’s access. The extension creates a separate desktop profile if needed, or uses an existing one. To use Microsoft Graph instead, click **Sign in to Microsoft Graph** or **Choose profile**.
 4. Open a conversation from the sidebar or use **Teams: Find Conversation**.
@@ -90,4 +96,6 @@ npm run package
 
 The UI suite uses Playwright Chromium; install it with `npx playwright install chromium`, or set `CHROME_PATH` to an existing Chrome for Testing / headless-shell binary. On macOS, avoid launching system Chrome for automated checks. The extension-host suite uses installed VS Code on macOS; set `VSCODE_EXECUTABLE` elsewhere or let the official test runner download it. It uses isolated user data and synthetic fixtures, with real writes disabled in the fake CLI. Desktop setup and connection regression tests use an in-memory host and cannot restart Teams. F5 opens a separate Extension Development Host.
 
-The VSIX includes only bundled runtime code, the theme stylesheet, the activity-bar SVG, this README, changelog, license, and manifest. Tests, synthetic data, local research, design documents, and screenshots are excluded. Packaging is local; it does not publish to the Marketplace.
+The VSIX includes only bundled runtime code, theme stylesheets, the activity-bar SVG, this README, changelog, licenses, and manifest. Tests, synthetic data, local research, design documents, and screenshots are excluded. Packaging is local; it does not publish to the Marketplace.
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for test and release instructions, [SECURITY.md](SECURITY.md) for private vulnerability reports, and [GitHub issues](https://github.com/rvben/teams-vscode/issues) for bugs and feature requests. The project is [MIT licensed](LICENSE).

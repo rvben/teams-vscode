@@ -8,3 +8,16 @@ playwright-report/
 .impeccable/
 PRODUCT.md
 DESIGN.md
+.env
+.env.*
+!.env.example
+*.log
+*.har
+*.dmp
+*.heapsnapshot
+*.pem
+*.key
+*.p12
+.DS_Store
+.vscode-test/
+coverage/

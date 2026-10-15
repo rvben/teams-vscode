@@ -1,0 +1,36 @@
+name: Bug report
+description: Report a reproducible problem using non-sensitive examples.
+body:
+  - type: markdown
+    attributes:
+      value: "Keep credentials, account identities, messages, and signed-in screenshots out of this public report. Report security issues privately using SECURITY.md."
+  - type: input
+    id: versions
+    attributes:
+      label: Versions and platform
+      description: Extension version, Teams CLI version, VS Code version, OS, and whether this is a WSL/SSH window.
+    validations:
+      required: true
+  - type: dropdown
+    id: backend
+    attributes:
+      label: Connection
+      options:
+        - Desktop personal
+        - Desktop work or school
+        - Microsoft Graph
+        - Setup or not connected
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: What happened?
+      description: Include expected behavior and the steps to reproduce with synthetic examples.
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Connection diagnostics (optional)
+      description: Use Teams — Show Connection Diagnostics. Review before posting; do not paste raw CLI logs or conversation contents.

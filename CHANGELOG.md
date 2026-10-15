@@ -10,10 +10,6 @@
 - Download the verified Teams CLI 0.2.2 release, including its sign-in, onboarding and credential-store fixes.
 - Document that lightweight-browser setup remains CLI-only in this experimental extension.
 
-### Fixed
-
-- **installer**: download the all-inclusive CLI 0.2.1 release
-
 ## [0.1.1] - 2026-10-15
 
 ### Added
