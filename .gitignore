@@ -1,0 +1,10 @@
+node_modules
+dist/
+out/
+*.vsix
+test-results/
+playwright-report/
+.local-research/
+.impeccable/
+PRODUCT.md
+DESIGN.md

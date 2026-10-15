@@ -1,0 +1,366 @@
+{
+  "name": "teams-companion",
+  "displayName": "Teams Companion",
+  "description": "Read Teams conversations and reply from editor tabs, using Teams CLI.",
+  "version": "0.1.0",
+  "publisher": "rvben",
+  "private": true,
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.96.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "keywords": [
+    "teams",
+    "chat",
+    "teams-cli"
+  ],
+  "main": "./dist/extension.js",
+  "extensionKind": [
+    "ui"
+  ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": true
+    },
+    "virtualWorkspaces": true
+  },
+  "activationEvents": [
+    "onView:teams.connection",
+    "onView:teams.chats"
+  ],
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "check": "tsc --noEmit",
+    "test": "node --import tsx --test test/*.test.ts",
+    "test:ui": "playwright test",
+    "test:host": "node scripts/test-host.mjs",
+    "vscode:prepublish": "npm run check && npm run build && node scripts/licenses.mjs",
+    "format": "prettier --write src test scripts media/conversation.css *.json *.ts *.md .vscode/*.json .github/workflows/*.yml",
+    "package": "vsce package --no-dependencies --allow-missing-repository && node scripts/verify-package.mjs"
+  },
+  "contributes": {
+    "commands": [
+      {
+        "command": "teams.openChat",
+        "title": "Open Conversation",
+        "category": "Teams"
+      },
+      {
+        "command": "teams.newMessage",
+        "title": "New Message",
+        "category": "Teams",
+        "icon": "$(edit)",
+        "enablement": "!teams.connectionBusy"
+      },
+      {
+        "command": "teams.selectSidebarLayout",
+        "title": "Change Sidebar Layout",
+        "category": "Teams"
+      },
+      {
+        "command": "teams.findChat",
+        "title": "Find Conversation",
+        "category": "Teams",
+        "icon": "$(search)"
+      },
+      {
+        "command": "teams.refresh",
+        "title": "Refresh Conversations",
+        "category": "Teams",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "teams.selectProfile",
+        "title": "Select Profile",
+        "category": "Teams",
+        "icon": "$(account)",
+        "enablement": "!teams.connectionBusy"
+      },
+      {
+        "command": "teams.setup",
+        "title": "Set Up a Profile",
+        "category": "Teams",
+        "enablement": "!teams.connectionBusy"
+      },
+      {
+        "command": "teams.configureCli",
+        "title": "Select CLI Executable",
+        "category": "Teams",
+        "enablement": "!teams.connectionBusy"
+      },
+      {
+        "command": "teams.downloadCli",
+        "title": "Download Verified CLI",
+        "category": "Teams",
+        "enablement": "!teams.connectionBusy"
+      },
+      {
+        "command": "teams.connect",
+        "title": "Connect Teams Desktop",
+        "category": "Teams",
+        "icon": "$(plug)",
+        "enablement": "!teams.connectionBusy"
+      },
+      {
+        "command": "teams.disconnect",
+        "title": "Disconnect Teams Desktop",
+        "category": "Teams",
+        "icon": "$(debug-disconnect)",
+        "enablement": "!teams.connectionBusy"
+      },
+      {
+        "command": "teams.recover",
+        "title": "Recover Desktop Connection",
+        "category": "Teams",
+        "enablement": "!teams.connectionBusy"
+      },
+      {
+        "command": "teams.signIn",
+        "title": "Sign In to Graph Profile",
+        "category": "Teams"
+      },
+      {
+        "command": "teams.enableReplies",
+        "title": "Enable Replies",
+        "category": "Teams"
+      },
+      {
+        "command": "teams.openTeams",
+        "title": "Open Teams",
+        "category": "Teams"
+      },
+      {
+        "command": "teams.diagnostics",
+        "title": "Show Connection Diagnostics",
+        "category": "Teams"
+      },
+      {
+        "command": "teams.loadMoreChats",
+        "title": "Load More Conversations",
+        "category": "Teams"
+      },
+      {
+        "command": "teams.selectDesktopAccount",
+        "title": "Choose Teams Account",
+        "category": "Teams",
+        "enablement": "!teams.connectionBusy"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "teams",
+          "title": "Teams",
+          "icon": "media/teams.svg"
+        }
+      ]
+    },
+    "views": {
+      "teams": [
+        {
+          "id": "teams.connection",
+          "name": "Connection",
+          "visibility": "collapsed"
+        },
+        {
+          "id": "teams.chats",
+          "name": "Chats",
+          "type": "webview"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "teams.connection",
+        "contents": "Preparing your Teams connection\u2026",
+        "when": "teams.connectionState == checking"
+      },
+      {
+        "view": "teams.connection",
+        "contents": "Connect the account already signed in to Teams.\n[Download verified CLI](command:teams.downloadCli)\n[Select CLI executable](command:teams.configureCli)",
+        "when": "teams.connectionState == cli"
+      },
+      {
+        "view": "teams.connection",
+        "contents": "Use the account signed in to Teams Desktop.\n[Connect Teams Desktop](command:teams.connect)\n[Set up a profile](command:teams.setup)",
+        "when": "teams.connectionState == setup"
+      },
+      {
+        "view": "teams.connection",
+        "contents": "Use your signed-in desktop app, or sign in with Microsoft Graph.\n[Connect Teams Desktop](command:teams.connect)\n[Sign in to Microsoft Graph](command:teams.signIn)\n[Choose profile](command:teams.selectProfile)",
+        "when": "teams.connectionState == graph"
+      },
+      {
+        "view": "teams.connection",
+        "contents": "Desktop connection is closed. Connect to load chats from the signed-in Teams app.\n[Connect Teams Desktop](command:teams.connect)\n[Choose profile](command:teams.selectProfile)",
+        "when": "teams.connectionState == disconnected"
+      },
+      {
+        "view": "teams.connection",
+        "contents": "Desktop connection is open. Chats come from Teams\u2019 local cache.\n[Refresh conversations](command:teams.refresh)\n[Disconnect Teams Desktop](command:teams.disconnect)\n[Choose profile](command:teams.selectProfile)\nAccount: [Personal or work/school](command:teams.selectDesktopAccount)",
+        "when": "teams.connectionState == connected"
+      },
+      {
+        "view": "teams.connection",
+        "contents": "An interrupted desktop setup needs attention. Recover its settings, then disconnect before connecting again.\n[Recover desktop connection](command:teams.recover)\n[Disconnect Teams Desktop](command:teams.disconnect)\n[Show diagnostics](command:teams.diagnostics)",
+        "when": "teams.connectionState == recovery"
+      },
+      {
+        "view": "teams.connection",
+        "contents": "The desktop connection could not be verified. Try connecting, or inspect its status.\n[Connect Teams Desktop](command:teams.connect)\n[Show diagnostics](command:teams.diagnostics)\n[Recover desktop connection](command:teams.recover)\n[Choose profile](command:teams.selectProfile)",
+        "when": "teams.connectionState == unavailable"
+      },
+      {
+        "view": "teams.connection",
+        "contents": "Updating the desktop connection\u2026 Teams may restart.",
+        "when": "teams.connectionState == busy"
+      },
+      {
+        "view": "teams.chats",
+        "contents": "Your conversations will appear here after you connect.\n[Connect Teams Desktop](command:teams.connect)",
+        "when": "!teams.ready && teams.connectionState != cli && teams.connectionState != checking"
+      },
+      {
+        "view": "teams.connection",
+        "contents": "Desktop is connected, but more than one Teams account is available. Choose the account to load.\n[Choose Teams account](command:teams.selectDesktopAccount)\n[Disconnect Teams Desktop](command:teams.disconnect)",
+        "when": "teams.connectionState == account"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "teams.newMessage",
+          "when": "view == teams.chats",
+          "group": "navigation@1"
+        },
+        {
+          "command": "teams.findChat",
+          "when": "view == teams.chats",
+          "group": "conversations@1"
+        },
+        {
+          "command": "teams.refresh",
+          "when": "view == teams.chats",
+          "group": "navigation@2"
+        },
+        {
+          "command": "teams.selectSidebarLayout",
+          "when": "view == teams.chats",
+          "group": "appearance@1"
+        },
+        {
+          "command": "teams.selectProfile",
+          "when": "view == teams.chats && teams.multipleAccounts",
+          "group": "navigation@3"
+        },
+        {
+          "command": "teams.setup",
+          "when": "view == teams.chats",
+          "group": "connection@3"
+        },
+        {
+          "command": "teams.connect",
+          "when": "view == teams.connection && teams.connectionState != connected && teams.connectionState != cli",
+          "group": "navigation@1"
+        },
+        {
+          "command": "teams.disconnect",
+          "when": "view == teams.connection && teams.connectionState == connected",
+          "group": "navigation@1"
+        },
+        {
+          "command": "teams.selectProfile",
+          "when": "view == teams.connection",
+          "group": "navigation@2"
+        },
+        {
+          "command": "teams.diagnostics",
+          "when": "view == teams.connection",
+          "group": "connection@1"
+        },
+        {
+          "command": "teams.recover",
+          "when": "view == teams.connection",
+          "group": "connection@2"
+        },
+        {
+          "command": "teams.setup",
+          "when": "view == teams.connection",
+          "group": "connection@3"
+        },
+        {
+          "command": "teams.selectDesktopAccount",
+          "when": "view == teams.connection && teams.connectionState != graph && teams.connectionState != cli",
+          "group": "connection@0"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Teams Companion",
+      "properties": {
+        "teamsCompanion.cliPath": {
+          "type": "string",
+          "default": "",
+          "scope": "machine",
+          "description": "Absolute path to a trusted Teams CLI executable. Empty uses PATH or the extension's verified download. Runs on the local VS Code host, including in WSL/SSH windows."
+        },
+        "teamsCompanion.repliesEnabled": {
+          "type": "boolean",
+          "default": false,
+          "scope": "machine",
+          "description": "Allow replies when the selected CLI profile also permits sending."
+        },
+        "teamsCompanion.pollIntervalSeconds": {
+          "type": "number",
+          "default": 30,
+          "minimum": 10,
+          "maximum": 300,
+          "scope": "machine",
+          "description": "Refresh interval for the visible sidebar and conversation tabs. Hidden views do not poll."
+        },
+        "teamsCompanion.sendOnEnter": {
+          "type": "boolean",
+          "default": false,
+          "scope": "machine",
+          "description": "Send with Enter; Shift+Enter inserts a line. By default use Ctrl+Enter or Cmd+Enter."
+        },
+        "teamsCompanion.sidebarLayout": {
+          "type": "string",
+          "enum": [
+            "teams",
+            "compact",
+            "comfortable"
+          ],
+          "enumDescriptions": [
+            "Avatars with a message preview and timestamp.",
+            "Smaller avatars and single-line conversation rows.",
+            "Larger avatars with two lines of preview."
+          ],
+          "default": "teams",
+          "description": "Conversation sidebar layout. Changes apply immediately and keep open tabs and drafts intact."
+        }
+      }
+    }
+  },
+  "dependencies": {
+    "entities": "^6.0.1",
+    "tar-stream": "^3.1.7"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "^4.10.2",
+    "@playwright/test": "1.64.0",
+    "@types/node": "^22.18.0",
+    "@types/tar-stream": "^3.1.4",
+    "@types/vscode": "1.96.0",
+    "@vscode/test-electron": "3.1.0",
+    "@vscode/vsce": "4.0.0",
+    "esbuild": "^0.25.11",
+    "jszip": "^3.10.2",
+    "prettier": "^3.9.10",
+    "tsx": "^4.20.6",
+    "typescript": "~5.9.3"
+  }
+}

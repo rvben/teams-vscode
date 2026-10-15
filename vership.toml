@@ -1,0 +1,13 @@
+[project]
+branch = "main"
+
+[checks]
+lint = true
+lint_command = "npm run check"
+tests = true
+test_command = "npm test && npm run build && npm run test:ui && npm run test:host && npm run package"
+
+# Vership prepares versions and Git releases. VSIX packaging is checked above;
+# Marketplace publication requires a separate approved publication workflow.
+[verify]
+skip = ["npm"]

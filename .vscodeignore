@@ -1,0 +1,12 @@
+**
+!package.json
+!README.md
+!CHANGELOG.md
+!LICENSE
+!THIRD_PARTY_NOTICES.md
+!dist/extension.js
+!dist/conversation.js
+!dist/conversation.css
+!media/teams.svg
+!dist/sidebar.js
+!dist/sidebar.css

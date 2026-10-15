@@ -1,0 +1,25 @@
+name: Check
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  check:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+      - run: npm test
+      - run: npm run build
+      - run: npm run package
+      - if: runner.os == 'Linux'
+        run: npx playwright install --with-deps chromium
+      - if: runner.os == 'Linux'
+        run: npm run test:ui
