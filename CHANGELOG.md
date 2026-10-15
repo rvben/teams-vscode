@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.1.3](https://github.com/rvben/teams-vscode/compare/v0.1.2...v0.1.3) - 2026-10-15
+
 ### Added
 
 - Guided Account Setup opens the CLI’s validated setup wizard in a dedicated VS Code terminal and returns to Chats on success.
