@@ -2,7 +2,7 @@
   "name": "teams-companion",
   "displayName": "Teams Companion (Experimental)",
   "description": "Experimental Teams conversations and replies in editor tabs, using Teams CLI.",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "publisher": "rvben",
   "preview": true,
   "private": true,

@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.1.5](https://github.com/rvben/teams-vscode/compare/v0.1.4...v0.1.5) - 2026-10-16
+
 ### Added
 
 - Automatically upgrade extension-managed CLIs to the version tested with the extension, with an opt-out. User-selected and PATH installations remain under your control.
