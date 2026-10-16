@@ -52,7 +52,29 @@ export async function run() {
     true,
     "Account chooser returns after another profile signs in",
   );
+  const details = api.cliDetails();
+  assert.equal(
+    details.source,
+    "configured",
+    "A user-selected executable is never taken over for automatic upgrades",
+  );
+  assert(
+    details.version,
+    "The verified CLI version is available in the native CLI view",
+  );
+  assert.equal(details.rows[0].command, "teams.manageCli");
   const contribution = extension.packageJSON.contributes;
+  assert.equal(
+    contribution.configuration.properties["teamsCompanion.autoUpdateCli"]
+      .default,
+    true,
+  );
+  assert(
+    contribution.views.teams.some(
+      (view: { id: string }) => view.id === "teams.cli",
+    ),
+  );
+  assert((await vscode.commands.getCommands()).includes("teams.manageCli"));
   assert(
     contribution.commands.some(
       (c: { command: string }) => c.command === "teams.newMessage",

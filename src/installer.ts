@@ -1,3 +1,4 @@
+import { needsManagedUpgrade } from "./cli-updates";
 import { createHash, timingSafeEqual } from "node:crypto";
 import {
   mkdir,
@@ -7,13 +8,31 @@ import {
   chmod,
   access,
   constants,
+  realpath,
+  lstat,
+  rm,
+  mkdtemp,
+  stat,
+  open,
+  readdir,
 } from "node:fs/promises";
-import { join, delimiter, isAbsolute } from "node:path";
+import { join, delimiter, isAbsolute, resolve, relative, sep } from "node:path";
 import { get } from "node:https";
 import { gunzipSync } from "node:zlib";
 import { extract } from "tar-stream";
 
 export const CLI_VERSION = "0.2.3";
+// Pin the tested release bytes independently of mutable release metadata.
+export const CLI_CHECKSUMS: Readonly<Record<string, string>> = {
+  "teams-cli-v0.2.3-aarch64-apple-darwin.tar.gz":
+    "729548ef90db1a9e39a23a379244b170f8fef14b08e131b93191e982a6fd74f2",
+  "teams-cli-v0.2.3-x86_64-apple-darwin.tar.gz":
+    "86a52478d63e84f93ae661b679b91bb609a6d821a55d42a78dd960414eea861e",
+  "teams-cli-v0.2.3-x86_64-pc-windows-msvc.tar.gz":
+    "b96be012268e1b1d0d9fd85be912b4eaf2c50e7cd3676446c14d64badf8de51e",
+  "teams-cli-v0.2.3-x86_64-unknown-linux-gnu.tar.gz":
+    "1584e66a4c8159075c4dc40aa16d7058f661b2f6e372344072dabdd53c6e5af5",
+};
 const base = `https://github.com/rvben/teams-cli/releases/download/v${CLI_VERSION}/`;
 const hosts = new Set([
   "github.com",
@@ -176,64 +195,294 @@ export async function extractExecutable(
   }
   return done;
 }
-export async function installCli(root: string): Promise<string> {
-  const name = archiveName();
-  const [archive, sums] = await Promise.all([
-    download(base + name),
-    download(base + "SHA256SUMS", 1024 * 1024),
+export interface CliSelection {
+  executable: string;
+  source: "managed" | "configured" | "path";
+  managedVersion?: string;
+}
+export function managedVersion(
+  executable: string,
+  root: string,
+): string | undefined {
+  const parts = relative(resolve(root, "cli"), resolve(executable)).split(sep);
+  const name = process.platform === "win32" ? "teams.exe" : "teams";
+  return parts.length === 2 &&
+    /^\d+\.\d+\.\d+$/.test(parts[0]!) &&
+    parts[1] === name
+    ? parts[0]
+    : undefined;
+}
+export function managedPath(root: string, version = CLI_VERSION): string {
+  return join(
+    root,
+    "cli",
+    version,
+    process.platform === "win32" ? "teams.exe" : "teams",
+  );
+}
+export async function verifyManaged(
+  executable: string,
+  root: string,
+): Promise<void> {
+  const version = managedVersion(executable, root);
+  if (
+    !version ||
+    !(await lstat(executable)).isFile() ||
+    (await realpath(executable)) !== managedPath(await realpath(root), version)
+  )
+    throw new Error(
+      "The managed CLI location could not be verified. Download the recommended CLI again.",
+    );
+  const [bytes, hash] = await Promise.all([
+    readFile(executable),
+    readFile(executable + ".sha256", "utf8"),
   ]);
-  verifyChecksum(archive, sums.toString("utf8"), name);
+  if (
+    !/^[a-f0-9]{64}$/.test(hash.trim()) ||
+    createHash("sha256").update(bytes).digest("hex") !== hash.trim()
+  )
+    throw new Error(
+      "The managed CLI checksum changed. Download the recommended CLI again.",
+    );
+  await access(executable, constants.X_OK);
+}
+export class InstallBusy extends Error {}
+
+async function installationLock(parent: string): Promise<() => Promise<void>> {
+  const path = join(parent, ".install.lock");
+  const token = `${process.pid}-${Date.now()}-${Math.random()}`;
+  for (let attempt = 0; attempt < 100; attempt++) {
+    try {
+      const file = await open(path, "wx", 0o600);
+      try {
+        await file.writeFile(token);
+      } finally {
+        await file.close();
+      }
+      return async () => {
+        if ((await readFile(path, "utf8").catch(() => "")) === token)
+          await rm(path, { force: true }).catch(() => {});
+      };
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+      const info = await stat(path).catch(() => undefined);
+      if (info && Date.now() - info.mtimeMs > 120_000) {
+        const stale = path + "." + token;
+        try {
+          await rename(path, stale);
+          await rm(stale, { force: true });
+        } catch {}
+      }
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+  }
+  throw new InstallBusy(
+    "Another window is installing Teams CLI. Try again shortly.",
+  );
+}
+export interface InstallOptions {
+  download?: typeof download;
+  verify?: (executable: string) => Promise<void>;
+  checksum?: string;
+  reuse?: boolean;
+}
+export async function installCli(
+  root: string,
+  options: InstallOptions = {},
+): Promise<string> {
+  if (options.reuse !== false) {
+    const cached = managedPath(root);
+    try {
+      await verifyManaged(cached, root);
+      await options.verify?.(cached);
+      return cached;
+    } catch {}
+  }
+  const name = archiveName(),
+    fetch = options.download ?? download;
+  const archive = await fetch(base + name);
+  verifyChecksum(
+    archive,
+    `${options.checksum ?? CLI_CHECKSUMS[name]}  ${name}`,
+    name,
+  );
   const exe = process.platform === "win32" ? "teams.exe" : "teams";
   const binary = await extractExecutable(archive, exe);
-  const dir = join(root, "cli", CLI_VERSION);
-  await mkdir(dir, { recursive: true, mode: 0o700 });
-  const target = join(dir, exe);
-  const temp = target + "." + process.pid + ".tmp";
-  await writeFile(temp, binary, { mode: 0o700 });
-  await chmod(temp, 0o700);
-  await rename(temp, target);
-  await writeFile(
-    target + ".sha256",
-    createHash("sha256").update(binary).digest("hex"),
-    { mode: 0o600 },
-  );
-  return target;
+  const parent = join(root, "cli");
+  await mkdir(parent, { recursive: true, mode: 0o700 });
+  const staging = await mkdtemp(join(parent, ".download-"));
+  const staged = join(staging, exe),
+    destination = join(parent, CLI_VERSION);
+  let unlock: (() => Promise<void>) | undefined;
+  let quarantine: string | undefined;
+  let published = false;
+  try {
+    await writeFile(staged, binary, { mode: 0o700, flag: "wx" });
+    await chmod(staged, 0o700);
+    await writeFile(
+      staged + ".sha256",
+      createHash("sha256").update(binary).digest("hex"),
+      { mode: 0o600, flag: "wx" },
+    );
+    await options.verify?.(staged);
+    unlock = await installationLock(parent);
+    // Retire abandoned staging/recovery directories after interrupted installs.
+    for (const entry of await readdir(parent, { withFileTypes: true })) {
+      if (
+        !entry.isDirectory() ||
+        !/^\.download-[A-Za-z0-9]+(?:\.stale)?$/.test(entry.name)
+      )
+        continue;
+      const abandoned = join(parent, entry.name);
+      const info = await stat(abandoned).catch(() => undefined);
+      if (info && Date.now() - info.mtimeMs > 60 * 60 * 1000)
+        await rm(abandoned, {
+          recursive: true,
+          force: true,
+          maxRetries: 1,
+          retryDelay: 100,
+        }).catch(() => {});
+    }
+    for (let attempt = 0; ; attempt++) {
+      try {
+        await rename(staging, destination);
+        break;
+      } catch (error) {
+        if (attempt >= 6)
+          throw new Error(
+            "The CLI installation is locked or its permissions prevent changes. Close other Teams Companion windows, check storage permissions, then retry. Your current CLI was kept.",
+          );
+        const exists = await stat(destination).then(
+          () => true,
+          () => false,
+        );
+        if (exists) {
+          let valid = false;
+          try {
+            await verifyManaged(join(destination, exe), root);
+            valid = true;
+          } catch {}
+          if (valid) {
+            if (
+              createHash("sha256")
+                .update(await readFile(join(destination, exe)))
+                .digest("hex") !==
+              createHash("sha256").update(binary).digest("hex")
+            )
+              throw new Error(
+                "The installed CLI differs from this verified release. It was left untouched.",
+              );
+            break;
+          }
+          // Recover a partial legacy install without overwriting a live binary.
+          // A locked Windows directory stays untouched and is retried below.
+          try {
+            await rename(destination, staging + ".stale");
+            quarantine = staging + ".stale";
+          } catch {}
+        } else if (
+          ![
+            "ENOENT",
+            "EPERM",
+            "EACCES",
+            "EBUSY",
+            "EEXIST",
+            "ENOTEMPTY",
+          ].includes((error as NodeJS.ErrnoException).code ?? "")
+        ) {
+          throw error;
+        }
+        await new Promise((resolve) =>
+          setTimeout(resolve, 100 * (attempt + 1)),
+        );
+      }
+    }
+    published = true;
+    return join(destination, exe);
+  } finally {
+    if (published && quarantine)
+      await rm(quarantine, {
+        recursive: true,
+        force: true,
+        maxRetries: 3,
+        retryDelay: 100,
+      }).catch(() => {});
+    await unlock?.();
+    await rm(staging, {
+      recursive: true,
+      force: true,
+      maxRetries: 3,
+      retryDelay: 100,
+    }).catch(() => {});
+  }
 }
-export async function resolveCli(
+export async function resolveCliSelection(
   configured: string,
   root: string,
-): Promise<string> {
+  saved?: { configured: string; executable: string },
+): Promise<CliSelection> {
+  const originalVersion =
+    configured && isAbsolute(configured) && managedVersion(configured, root);
+  const savedVersion = saved && managedVersion(saved.executable, root);
+  if (
+    originalVersion &&
+    saved?.configured === configured &&
+    savedVersion &&
+    needsManagedUpgrade(originalVersion, savedVersion)
+  ) {
+    try {
+      return await resolveCliSelection(saved.executable, root);
+    } catch {}
+  }
   if (configured) {
     if (!isAbsolute(configured))
       throw new Error(
         "Select an absolute path to a trusted Teams CLI executable.",
       );
+    const version = managedVersion(configured, root);
+    if (version) {
+      await verifyManaged(configured, root);
+      return {
+        executable: configured,
+        source: "managed",
+        managedVersion: version,
+      };
+    }
     await access(configured, constants.X_OK);
-    return configured;
+    return { executable: configured, source: "configured" };
   }
   const name = process.platform === "win32" ? "teams.exe" : "teams";
-  // Never execute a workspace-relative PATH entry in an untrusted workspace.
   for (const dir of (process.env.PATH ?? "")
     .split(delimiter)
     .filter(isAbsolute)) {
-    const candidate = join(dir, name);
+    const executable = join(dir, name);
     try {
-      await access(candidate, constants.X_OK);
-      return candidate;
+      await access(executable, constants.X_OK);
+      const version = managedVersion(executable, root);
+      if (version) {
+        await verifyManaged(executable, root);
+        return { executable, source: "managed", managedVersion: version };
+      }
+      return { executable, source: "path" };
     } catch {}
   }
-  const cached = join(root, "cli", CLI_VERSION, name);
+  const cached = managedPath(root);
   try {
-    const [bytes, hash] = await Promise.all([
-      readFile(cached),
-      readFile(cached + ".sha256", "utf8"),
-    ]);
-    if (createHash("sha256").update(bytes).digest("hex") !== hash.trim())
-      throw new Error("hash");
-    return cached;
+    await verifyManaged(cached, root);
+    return {
+      executable: cached,
+      source: "managed",
+      managedVersion: CLI_VERSION,
+    };
   } catch {
     throw new Error(
       "Teams CLI was not found. Select an executable or download the verified CLI.",
     );
   }
+}
+export async function resolveCli(
+  configured: string,
+  root: string,
+): Promise<string> {
+  return (await resolveCliSelection(configured, root)).executable;
 }

@@ -19,6 +19,9 @@ export class GuidedSetup {
   private job?: SetupJob;
   private disposed = false;
   constructor(private readonly host: SetupHost) {}
+  get busy() {
+    return !!this.pending;
+  }
   execute(action: SetupAction = "setup", profile?: Profile): Promise<void> {
     if (this.pending) {
       this.job?.reveal();

@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### Added
+
+- Automatically upgrade extension-managed CLIs to the version tested with the extension, with an opt-out. User-selected and PATH installations remain under your control.
+- Show the active CLI version, source, executable path, update progress and browser-cleanup support in the CLI sidebar section and **Teams: Manage CLI**.
+
+### Fixed
+
+- Verify downloads against embedded release hashes, stage and validate them before switching, recover interrupted installs, and reuse verified cached downloads offline.
+- Switch managed CLIs only when work is idle, preserving open conversations, drafts, send guards and shared browser ownership. Automatic upgrades avoid changing settings observed by older extension windows.
+
 ## [0.1.4](https://github.com/rvben/teams-vscode/compare/v0.1.3...v0.1.4) - 2026-10-16
 
 ### Fixed

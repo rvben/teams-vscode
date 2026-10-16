@@ -17,6 +17,7 @@ export class Conversation {
   draft = "";
   busy = false;
   sending = false;
+  sendStarting = false;
   error = "";
   operationError = "";
   errorKind = "";
@@ -103,13 +104,15 @@ export class Conversation {
     }
   }
   async send(allow: boolean): Promise<void> {
-    if (!this.alive || this.sending || !this.draft.trim()) return;
+    if (!this.alive || this.sending || this.sendStarting || !this.draft.trim())
+      return;
     if (!allow || this.profile.readOnly)
       throw new Error("Replies are disabled for this profile.");
     if (this.pending || this.corrupt)
       throw new Error("Review the previous send first.");
     const body = this.draft;
     let pending: Pending;
+    this.sendStarting = true;
     try {
       pending = await this.store.claim(this.scope);
     } catch (e) {
@@ -118,8 +121,14 @@ export class Conversation {
       } catch {
         this.corrupt = true;
       }
+      this.sendStarting = false;
       this.changed();
       throw e;
+    }
+    this.sendStarting = false;
+    if (!this.alive) {
+      await this.store.clear(this.scope, pending.operation, true);
+      return;
     }
     this.pending = pending;
     this.sending = true;

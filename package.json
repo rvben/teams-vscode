@@ -173,6 +173,11 @@
         "command": "teams.checkForUpdates",
         "title": "Check for Extension Updates",
         "category": "Teams"
+      },
+      {
+        "command": "teams.manageCli",
+        "title": "Manage CLI",
+        "category": "Teams"
       }
     ],
     "viewsContainers": {
@@ -195,6 +200,11 @@
           "id": "teams.chats",
           "name": "Chats",
           "type": "webview"
+        },
+        {
+          "id": "teams.cli",
+          "name": "CLI",
+          "visibility": "visible"
         }
       ]
     },
@@ -361,6 +371,11 @@
           "command": "teams.checkForUpdates",
           "when": "view == teams.connection",
           "group": "help@1"
+        },
+        {
+          "command": "teams.manageCli",
+          "when": "view == teams.connection",
+          "group": "help@0"
         }
       ]
     },
@@ -419,6 +434,12 @@
           "default": false,
           "scope": "application",
           "description": "Keep browsers started by Teams Companion running after its last window exits. Applies to newly started sessions. Saved sign-in is retained either way; browsers started separately stay running."
+        },
+        "teamsCompanion.autoUpdateCli": {
+          "type": "boolean",
+          "default": true,
+          "scope": "application",
+          "description": "Automatically upgrade CLI copies downloaded by Teams Companion to the version tested with this extension. Downloads are verified and selected when current work is idle. User-selected and PATH installations are left in place."
         }
       }
     }

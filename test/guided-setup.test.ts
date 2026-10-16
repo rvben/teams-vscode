@@ -112,3 +112,33 @@ test("browser setup requires the stable CLI version and the actual guided setup 
   ])
     assert(!supportsGuidedSetup("0.2.2", value));
 });
+
+test("setup stays busy before the terminal exists and through completion", async () => {
+  let profilesReady!: (value: Profile[]) => void;
+  let finish!: (code: number) => void;
+  const finished = new Promise<number>((resolve) => {
+    finish = resolve;
+  });
+  const setup = new GuidedSetup({
+    profiles: () =>
+      new Promise((resolve) => {
+        profilesReady = resolve;
+      }),
+    launch: async () => ({ finished, reveal() {} }),
+    complete: async () => {
+      assert(setup.busy);
+    },
+    failed: async () => {},
+  });
+  const work = setup.execute();
+  assert(
+    setup.busy,
+    "The pre-terminal capability/profile phase blocks handoff",
+  );
+  profilesReady([]);
+  await new Promise(setImmediate);
+  assert(setup.busy);
+  finish(0);
+  await work;
+  assert.equal(setup.busy, false);
+});

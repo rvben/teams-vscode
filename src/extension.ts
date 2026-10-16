@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import { randomUUID } from "node:crypto";
 import { Cli, CliError } from "./cli";
+import { joinBrowsers } from "./cli-handoff";
 import {
   Chat,
   Profile,
@@ -11,7 +12,20 @@ import {
   str,
   accountLabel,
 } from "./models";
-import { resolveCli, installCli, CLI_VERSION } from "./installer";
+import {
+  resolveCliSelection,
+  managedVersion,
+  verifyManaged,
+  installCli,
+  InstallBusy,
+  CLI_VERSION,
+  type CliSelection,
+} from "./installer";
+import {
+  CliUpgrade,
+  needsManagedUpgrade,
+  type CliUpdateState,
+} from "./cli-updates";
 import { PendingStore } from "./pending";
 import {
   searchRecipients,
@@ -69,6 +83,10 @@ export async function activate(context: vscode.ExtensionContext) {
   let cli: Cli | undefined,
     cliPromise: Promise<Cli> | undefined,
     version = "",
+    cliSelection: CliSelection | undefined,
+    cliUpdateState: CliUpdateState = "idle",
+    cliChange = 0,
+    setupTerminals = 0,
     active: Profile | undefined,
     allProfiles: Profile[] = [],
     availableProfiles: Profile[] = [],
@@ -98,6 +116,82 @@ export async function activate(context: vscode.ExtensionContext) {
   const usedClis = new Set<Cli>();
   const tabs = new Map<string, Tab>();
   const drafts = new Map<string, string>();
+  const cliDetailsChanged = new vscode.EventEmitter<void>();
+  context.subscriptions.push(cliDetailsChanged);
+  function cliRows(): vscode.TreeItem[] {
+    const item = new vscode.TreeItem("Teams CLI");
+    item.description = version
+      ? `${version} · ${cliSelection?.source === "managed" ? "Extension-managed" : "Managed by you"}`
+      : "Not selected";
+    item.iconPath = new vscode.ThemeIcon("terminal");
+    item.command = { command: "teams.manageCli", title: "Manage Teams CLI" };
+    const source =
+      cliSelection?.source === "managed"
+        ? "Managed by Teams Companion"
+        : cliSelection?.source === "path"
+          ? "From PATH · Managed by you"
+          : "Selected executable · Managed by you";
+    item.tooltip = cliSelection
+      ? `${source}\n${cliSelection.executable}\nRecommended: ${CLI_VERSION}`
+      : "Select an executable or download the recommended CLI.";
+    const rows = [item];
+    if (cliUpdateState !== "idle") {
+      const update = new vscode.TreeItem(
+        cliUpdateState === "downloading"
+          ? "Preparing CLI update"
+          : cliUpdateState === "pending"
+            ? "CLI update ready"
+            : "CLI update failed",
+      );
+      update.description =
+        cliUpdateState === "pending"
+          ? cliWaitReason
+          : cliUpdateState === "failed"
+            ? "Current CLI kept"
+            : CLI_VERSION;
+      update.tooltip =
+        cliUpdateState === "pending" && cliJoinError
+          ? `${cliJoinError} Open Connection to recover or disconnect the affected browser, then click here to retry.`
+          : cliUpdateState === "failed"
+            ? "Your current CLI is still selected. Open Manage Teams CLI to retry."
+            : "Downloads are verified before switching. Sends, setup and drafts are preserved.";
+      update.iconPath = new vscode.ThemeIcon(
+        cliUpdateState === "failed" ? "warning" : "cloud-download",
+      );
+      update.command = {
+        command: "teams.manageCli",
+        title: "Manage Teams CLI",
+      };
+      rows.push(update);
+    }
+    if (
+      process.platform !== "win32" &&
+      browserConnection &&
+      cli &&
+      !cli.browserLifetimeSupported
+    ) {
+      const cleanup = new vscode.TreeItem(
+        "Automatic browser cleanup unavailable",
+      );
+      cleanup.description = "Update CLI";
+      cleanup.tooltip = `Use the recommended CLI ${CLI_VERSION} to close extension-managed browsers after the last window exits. Until then, disconnect before exiting.`;
+      cleanup.iconPath = new vscode.ThemeIcon("warning");
+      cleanup.command = {
+        command: "teams.manageCli",
+        title: "Update Teams CLI",
+      };
+      rows.push(cleanup);
+    }
+    return rows;
+  }
+  const cliView = vscode.window.createTreeView<vscode.TreeItem>("teams.cli", {
+    treeDataProvider: {
+      onDidChangeTreeData: cliDetailsChanged.event,
+      getChildren: (element) => (element ? [] : cliRows()),
+      getTreeItem: (item) => item,
+    },
+  });
+  context.subscriptions.push(cliView);
   const connectionView = vscode.window.createTreeView<never>(
     "teams.connection",
     {
@@ -205,32 +299,329 @@ export async function activate(context: vscode.ExtensionContext) {
     if (cli) return cli;
     if (cliPromise) return cliPromise;
     cliPromise = (async () => {
-      const executable = await resolveCli(
-        settings().get<string>("cliPath", ""),
+      const change = cliChange;
+      const configured = settings().get<string>("cliPath", "");
+      const saved = context.globalState.get<{
+        configured: string;
+        executable: string;
+      }>("cliUpdates.selection");
+      let selected = await resolveCliSelection(
+        configured,
         context.globalStorageUri.fsPath,
+        saved,
       );
+      const savedVersion =
+        saved &&
+        managedVersion(saved.executable, context.globalStorageUri.fsPath);
+      if (
+        !configured &&
+        selected.source === "managed" &&
+        saved?.configured === configured &&
+        savedVersion &&
+        needsManagedUpgrade(selected.managedVersion!, savedVersion)
+      ) {
+        try {
+          selected = await resolveCliSelection(
+            saved.executable,
+            context.globalStorageUri.fsPath,
+          );
+        } catch {}
+      }
       const prefix =
         context.extensionMode === vscode.ExtensionMode.Test &&
         process.env.TEAMS_COMPANION_TEST_FIXTURE
           ? [process.env.TEAMS_COMPANION_TEST_FIXTURE]
           : [];
-      const candidate = new Cli(executable, log, prefix);
+      const candidate = new Cli(selected.executable, log, prefix);
       usedClis.add(candidate);
       try {
-        version = await candidate.verify();
-        if (disposed) throw new CliError("cancelled");
+        const verifiedVersion = await candidate.verify();
+        if (
+          disposed ||
+          change !== cliChange ||
+          settings().get<string>("cliPath", "") !== configured
+        )
+          throw new CliError("cancelled");
+        version = verifiedVersion;
       } catch (error) {
         await candidate.close();
         usedClis.delete(candidate);
         throw error;
       }
       cli = candidate;
+      cliSelection = selected;
+      cliDetailsChanged.fire();
+      setTimeout(() => {
+        void automaticCliUpgrade();
+      }, 0);
       return candidate;
     })();
     try {
       return await cliPromise;
     } finally {
       cliPromise = undefined;
+    }
+  }
+  interface PreparedCli {
+    api: Cli;
+    version: string;
+    previous: Cli | undefined;
+    selection: CliSelection | undefined;
+    change: number;
+    automatic: boolean;
+    configured: string;
+    retryAt?: number;
+  }
+  let automaticRequest = false;
+  let updateAutomatic = false;
+  let automaticRetryAt = 0;
+  let temporaryInstallFailure = false;
+  let pendingPreparedCli: PreparedCli | undefined;
+  let cliJoinError = "";
+  let manualUpgradeRequested = false;
+  let cliWaitReason = "Waiting for current work";
+  async function activatePreparedCli(
+    prepared: PreparedCli,
+    isCurrent = () => true,
+  ): Promise<boolean> {
+    const current = () =>
+      isCurrent() &&
+      !disposed &&
+      prepared.change === cliChange &&
+      cli === prepared.previous &&
+      settings().get<string>("cliPath", "") === prepared.configured &&
+      (!prepared.automatic ||
+        manualUpgradeRequested ||
+        settings().get("autoUpdateCli", true));
+    const idle = () =>
+      !loading &&
+      !connectionBusy &&
+      setupTerminals === 0 &&
+      !recipientPicker &&
+      !guidedSetup.busy &&
+      !cliPromise &&
+      (!cli || cli.idle) &&
+      ![...tabs.values()].some(
+        (tab) =>
+          tab.session.busy || tab.session.sending || tab.session.sendStarting,
+      );
+    if (!current())
+      throw new Error("CLI selection changed while the update was prepared.");
+    pendingPreparedCli = prepared;
+    if (!idle()) {
+      cliWaitReason = "Waiting for current work";
+      cliDetailsChanged.fire();
+      return false;
+    }
+    if ((prepared.retryAt ?? 0) > Date.now()) return false;
+    // Join each browser still in use before releasing the previous supervisor.
+    const profilesInUse = () => [
+      ...(active ? [active] : []),
+      ...[...tabs.values()].map((tab) => tab.session.profile),
+    ];
+    const selected = new Map(
+      profilesInUse().map((profile) => [profile.name, profile]),
+    );
+    if (
+      !(await joinBrowsers(
+        prepared.api,
+        [...selected.values()],
+        settings().get("keepBrowserRunning", false),
+        (error) => {
+          cliJoinError =
+            error instanceof CliError
+              ? error.message
+              : "The browser connection could not be checked. Recover or disconnect it in Connection, then retry.";
+        },
+      ))
+    ) {
+      prepared.retryAt = Date.now() + 30_000;
+      cliWaitReason = "Waiting for browser connection";
+      cliDetailsChanged.fire();
+      return false;
+    }
+    if (!current())
+      throw new Error("CLI selection changed while the update was prepared.");
+    if (!idle()) {
+      cliWaitReason = "Waiting for current work";
+      cliDetailsChanged.fire();
+      return false;
+    }
+    // A profile opened during the join needs ownership before we can switch.
+    if (profilesInUse().some((profile) => !selected.has(profile.name)))
+      return false;
+    cliJoinError = "";
+    const previous = cli;
+    if (previous && prepared.selection?.source === "managed") {
+      if (!previous.handoff(prepared.api)) return false;
+    } else if (previous) {
+      // A user-selected executable may use different configuration. Retain its
+      // scoped drafts and durable send journals without reusing its open tabs.
+      for (const tab of tabs.values()) {
+        drafts.set(tab.session.scope, tab.session.draft);
+        clearTimeout(tab.timer);
+        tab.session.dispose();
+        tab.panel?.dispose();
+      }
+      tabs.clear();
+    }
+    cli = prepared.api;
+    version = prepared.version;
+    cliSelection = {
+      executable: cli.executable,
+      source: "managed",
+      managedVersion: prepared.version,
+    };
+    ++cliChange;
+    pendingPreparedCli = undefined;
+    cliUpdateState = "idle";
+    updateAutomatic = false;
+    manualUpgradeRequested = false;
+    cliDetailsChanged.fire();
+    // A settings-write failure must never discard the now-active verified CLI.
+    try {
+      if (prepared.automatic) {
+        // Older extension windows may react destructively to cliPath changes.
+        // Remember our managed selection without triggering their listeners.
+        await context.globalState.update("cliUpdates.selection", {
+          configured: prepared.configured,
+          executable: cli.executable,
+        });
+      } else {
+        await settings().update(
+          "cliPath",
+          cli.executable,
+          vscode.ConfigurationTarget.Global,
+        );
+      }
+    } catch {
+      log(
+        "cli_update: selection could not be saved; verified CLI remains active for this window",
+      );
+    }
+    await previous?.close();
+    void refresh();
+    return true;
+  }
+  const cliUpgrade = new CliUpgrade<PreparedCli>({
+    prepare: async () => {
+      const previous = cli,
+        selection = cliSelection,
+        change = cliChange,
+        automatic = automaticRequest,
+        configured = settings().get<string>("cliPath", "");
+      updateAutomatic = automatic;
+      temporaryInstallFailure = false;
+      const verify = async (api: Cli) => {
+        const actual = await api.verify();
+        if (
+          actual !== CLI_VERSION ||
+          (process.platform !== "win32" && !api.browserLifetimeSupported)
+        )
+          throw new Error(
+            "The downloaded CLI does not provide the expected version and browser cleanup support.",
+          );
+        return actual;
+      };
+      const executable = await installCli(context.globalStorageUri.fsPath, {
+        verify: async (path) => {
+          const staged = new Cli(path);
+          try {
+            await verify(staged);
+          } finally {
+            await staged.close();
+          }
+        },
+      }).catch((error: unknown) => {
+        temporaryInstallFailure = error instanceof InstallBusy;
+        throw error;
+      });
+      const api = new Cli(executable, log);
+      try {
+        const nextVersion = await verify(api);
+        usedClis.add(api);
+        return {
+          api,
+          version: nextVersion,
+          previous,
+          selection,
+          change,
+          automatic,
+          configured,
+        };
+      } catch (error) {
+        await api.close();
+        throw error;
+      }
+    },
+    activate: activatePreparedCli,
+    discard: async (prepared) => {
+      if (cli === prepared.api && !disposed) return;
+      await prepared.api.close();
+      usedClis.delete(prepared.api);
+    },
+    changed: (state) => {
+      cliUpdateState = state;
+      if (state === "idle" || state === "failed") {
+        updateAutomatic = false;
+        manualUpgradeRequested = false;
+        pendingPreparedCli = undefined;
+      }
+      cliDetailsChanged.fire();
+    },
+  });
+  const upgradeTimer = setInterval(() => {
+    if (cliUpdateState === "pending") void cliUpgrade.apply();
+    else if (cliUpdateState === "failed") void automaticCliUpgrade();
+  }, 2000);
+  context.subscriptions.push({
+    dispose: () => {
+      clearInterval(upgradeTimer);
+      cliUpgrade.cancel();
+    },
+  });
+  async function automaticCliUpgrade() {
+    if (
+      disposed ||
+      cliSelection?.source !== "managed" ||
+      !settings().get("autoUpdateCli", true) ||
+      !needsManagedUpgrade(version, CLI_VERSION) ||
+      Date.now() < automaticRetryAt
+    )
+      return;
+    if (cliUpdateState === "downloading" || cliUpdateState === "pending")
+      return;
+    const attempt = context.globalState.get<{ version: string; time: number }>(
+      "cliUpdates.lastFailure",
+    );
+    if (
+      attempt?.version === CLI_VERSION &&
+      Date.now() - attempt.time < 24 * 60 * 60 * 1000
+    )
+      return;
+    if (
+      disposed ||
+      cliSelection?.source !== "managed" ||
+      !settings().get("autoUpdateCli", true) ||
+      !needsManagedUpgrade(version, CLI_VERSION)
+    )
+      return;
+    automaticRequest = true;
+    try {
+      await cliUpgrade.request();
+      if (cliUpdateState === "failed" && temporaryInstallFailure) {
+        automaticRetryAt = Date.now() + 30_000;
+      } else if (cliUpdateState === "failed") {
+        automaticRetryAt = Date.now() + 24 * 60 * 60 * 1000;
+        await context.globalState.update("cliUpdates.lastFailure", {
+          version: CLI_VERSION,
+          time: Date.now(),
+        });
+      }
+    } catch {
+      log("cli_update: automatic retry state could not be saved");
+    } finally {
+      automaticRequest = false;
     }
   }
   function setReady(value: boolean) {
@@ -260,10 +651,13 @@ export async function activate(context: vscode.ExtensionContext) {
     status.tooltip = active
       ? `Profile: ${active.name}\n${active.backend === "desktop" ? "Teams on this computer" : "Microsoft Graph"}${active.readOnly ? " · Read-only" : ""}${multiple ? "\nChoose a Teams connection" : ""}`
       : "Select a Teams profile";
+    if (cliSelection)
+      status.tooltip += `\nTeams CLI ${version} · ${cliSelection.source === "managed" ? "Extension-managed" : "Managed by you"}\n${cliSelection.executable}`;
     renderSidebar();
   }
   function showConnection(state: string) {
     connectionState = state;
+    cliDetailsChanged.fire();
     renderSidebar();
     if (!browserConnection || state !== "connected")
       connectionView.message = undefined;
@@ -1160,7 +1554,13 @@ export async function activate(context: vscode.ExtensionContext) {
         if (!choice) return;
         await vscode.commands.executeCommand("teams.downloadCli");
         api = await getCli();
-        if (!supportsGuidedSetup(version, await api.call(["schema"]))) return;
+        if (!supportsGuidedSetup(version, await api.call(["schema"]))) {
+          if (cliUpdateState === "pending" || cliUpdateState === "downloading")
+            await vscode.window.showInformationMessage(
+              "The CLI update will switch when current work finishes. Run Guided Account Setup again after the CLI section shows the new version.",
+            );
+          return;
+        }
       }
       if (
         action === "browserSignIn" &&
@@ -1181,6 +1581,7 @@ export async function activate(context: vscode.ExtensionContext) {
         );
         return;
       }
+      api = await getCli();
       await superviseBrowser(api);
       let terminal: vscode.Terminal | undefined;
       let finish!: (code: number | undefined) => void;
@@ -1190,7 +1591,9 @@ export async function activate(context: vscode.ExtensionContext) {
       const closed = vscode.window.onDidCloseTerminal((value) => {
         if (value !== terminal) return;
         closed.dispose();
+        setupTerminals--;
         finish(value.exitStatus?.code);
+        void cliUpgrade.apply();
       });
       context.subscriptions.push(closed);
       try {
@@ -1210,6 +1613,7 @@ export async function activate(context: vscode.ExtensionContext) {
           ],
           isTransient: true,
         });
+        setupTerminals++;
         terminal.show();
       } catch (error) {
         closed.dispose();
@@ -1387,6 +1791,14 @@ export async function activate(context: vscode.ExtensionContext) {
       shellArgs: ["--profile", profile.name, "auth", "login", "--device-code"],
       isTransient: true,
     });
+    setupTerminals++;
+    const closed = vscode.window.onDidCloseTerminal((value) => {
+      if (value !== terminal) return;
+      closed.dispose();
+      setupTerminals--;
+      void cliUpgrade.apply();
+    });
+    context.subscriptions.push(closed);
     terminal.show();
   }
   async function setup(
@@ -1503,6 +1915,9 @@ export async function activate(context: vscode.ExtensionContext) {
       ? obj(await api.call(["config", "show"], { profile: active.name }))
       : {};
     output.appendLine(
+      `CLI location: ${api.executable}; source: ${cliSelection?.source ?? "unknown"}; recommended: ${CLI_VERSION}; browser cleanup supported: ${api.browserLifetimeSupported}; automatic managed updates: ${settings().get("autoUpdateCli", true)}`,
+    );
+    output.appendLine(
       `Host: ${process.platform}/${process.arch}; CLI: ${version}; backend: ${str(config.backend) || "unselected"}; read-only: ${config.read_only === true}; replies enabled: ${settings().get("repliesEnabled", false)}`,
     );
     if (active?.backend === "desktop") {
@@ -1556,56 +1971,124 @@ export async function activate(context: vscode.ExtensionContext) {
       canSelectFiles: true,
       canSelectFolders: false,
     });
-    if (files?.[0])
+    if (files?.[0]) {
+      await context.globalState.update("cliUpdates.selection", undefined);
+      const chosen = files[0].fsPath;
+      if (
+        chosen === settings().get<string>("cliPath", "") &&
+        chosen !== cli?.executable
+      ) {
+        ++cliChange;
+        cliUpgrade.cancel();
+        await changeConfiguredCli();
+      } else {
+        await settings().update(
+          "cliPath",
+          chosen,
+          vscode.ConfigurationTarget.Global,
+        );
+      }
+    }
+  });
+  register("teams.manageCli", async () => {
+    const source =
+      cliSelection?.source === "managed"
+        ? "Managed by Teams Companion"
+        : "Managed by you";
+    const choice = await vscode.window.showQuickPick(
+      [
+        {
+          label: `Use recommended CLI ${CLI_VERSION}`,
+          description:
+            cliUpdateState === "pending"
+              ? "Ready · switches when idle"
+              : "Verified download · current work is preserved",
+          action: "download",
+        },
+        {
+          label: "Select CLI executable",
+          description: "Keep managing your own installation",
+          action: "select",
+        },
+        {
+          label: settings().get("autoUpdateCli", true)
+            ? "Turn off automatic CLI updates"
+            : "Turn on automatic CLI updates",
+          description: "Applies only to extension-managed installations",
+          action: "automatic",
+        },
+      ],
+      {
+        title: `Teams CLI ${version || "not selected"} · ${source}`,
+        placeHolder:
+          cliSelection?.executable || "Choose how to install Teams CLI",
+        ignoreFocusOut: true,
+      },
+    );
+    if (choice?.action === "download")
+      await vscode.commands.executeCommand("teams.downloadCli");
+    else if (choice?.action === "select")
+      await vscode.commands.executeCommand("teams.configureCli");
+    else if (choice?.action === "automatic")
       await settings().update(
-        "cliPath",
-        files[0].fsPath,
+        "autoUpdateCli",
+        !settings().get("autoUpdateCli", true),
         vscode.ConfigurationTarget.Global,
       );
   });
   register("teams.downloadCli", async () => {
+    if (cliUpdateState === "pending") {
+      manualUpgradeRequested = true;
+      updateAutomatic = false;
+      if (pendingPreparedCli) pendingPreparedCli.retryAt = undefined;
+      await cliUpgrade.apply();
+      if (cliUpdateState === "pending") {
+        const choice = await vscode.window.showInformationMessage(
+          cliJoinError
+            ? `${cliJoinError} The verified update is kept ready. Recover or disconnect the browser in Connection, then retry.`
+            : "The verified CLI update is ready and will switch when current work finishes.",
+          "Open Connection",
+        );
+        if (choice)
+          await vscode.commands.executeCommand("teams.connection.focus");
+      }
+      return;
+    }
     const ok = await vscode.window.showInformationMessage(
-      `Download Teams CLI ${CLI_VERSION} from rvben/teams-cli on GitHub? Its SHA-256 checksum will be checked before installation in extension storage.`,
+      `Use verified Teams CLI ${CLI_VERSION} from GitHub? It will be installed in extension storage and selected when current work is idle. Your other CLI installations are left in place.`,
       { modal: true },
-      "Download CLI",
+      "Use recommended CLI",
     );
     if (!ok) return;
-    const installed = await vscode.window.withProgress(
+    automaticRequest = false;
+    manualUpgradeRequested = true;
+    updateAutomatic = false;
+    await vscode.window.withProgress(
       {
         location: vscode.ProgressLocation.Notification,
         title: "Downloading and verifying Teams CLI",
       },
-      () => installCli(context.globalStorageUri.fsPath),
+      () => cliUpgrade.request(),
     );
-    void cli?.close();
-    cli = undefined;
-    await settings().update(
-      "cliPath",
-      installed,
-      vscode.ConfigurationTarget.Global,
-    );
-    await refresh();
+    if (cliUpdateState === "failed")
+      await vscode.window.showWarningMessage(
+        "The CLI update could not be verified or activated. Your current CLI is unchanged. Retry from Teams: Manage CLI.",
+      );
   });
   context.subscriptions.push(
     vscode.workspace.onDidChangeConfiguration((e) => {
       if (e.affectsConfiguration("teamsCompanion.cliPath")) {
-        void cli?.close();
-        cli = undefined;
-        ++generation;
-        loadAbort?.abort();
-        active = undefined;
-        allProfiles = [];
-        availableProfiles = [];
-        chats = [];
-        cursor = "";
-        for (const tab of tabs.values()) {
-          drafts.set(tab.session.scope, tab.session.draft);
-          tab.panel?.dispose();
-          tab.session.dispose();
-        }
-        tabs.clear();
-        void refresh();
+        if (settings().get<string>("cliPath", "") === cli?.executable) return;
+        ++cliChange;
+        cliUpgrade.cancel();
+        void changeConfiguredCli();
       } else if (e.affectsConfiguration("teamsCompanion")) {
+        if (e.affectsConfiguration("teamsCompanion.autoUpdateCli")) {
+          if (!settings().get("autoUpdateCli", true)) {
+            if (updateAutomatic && !manualUpgradeRequested) cliUpgrade.cancel();
+          } else void automaticCliUpgrade();
+          cliDetailsChanged.fire();
+        }
         if (e.affectsConfiguration("teamsCompanion.checkForUpdates"))
           void updates.check();
         renderSidebar();
@@ -1617,10 +2100,98 @@ export async function activate(context: vscode.ExtensionContext) {
       }
     }),
   );
+  async function changeConfiguredCli() {
+    const change = cliChange;
+    const configured = settings().get<string>("cliPath", "");
+    if (
+      cliSelection?.source === "managed" &&
+      managedVersion(configured, context.globalStorageUri.fsPath)
+    ) {
+      const candidate = new Cli(configured, log);
+      try {
+        await verifyManaged(configured, context.globalStorageUri.fsPath);
+        const nextVersion = await candidate.verify();
+        if (
+          nextVersion !==
+          managedVersion(configured, context.globalStorageUri.fsPath)
+        )
+          throw new Error(
+            "Managed CLI version does not match its installation.",
+          );
+        usedClis.add(candidate);
+        const prepared: PreparedCli = {
+          api: candidate,
+          version: nextVersion,
+          previous: cli,
+          selection: cliSelection,
+          change,
+          automatic: false,
+          configured,
+        };
+        cliUpdateState = "pending";
+        cliDetailsChanged.fire();
+        while (!disposed && change === cliChange) {
+          if (await activatePreparedCli(prepared)) return;
+          await new Promise((resolve) => setTimeout(resolve, 100));
+        }
+      } catch {
+        if (!disposed && change === cliChange) {
+          cliUpdateState = "failed";
+          cliDetailsChanged.fire();
+        }
+      } finally {
+        if (cli !== candidate) {
+          await candidate.close();
+          usedClis.delete(candidate);
+        }
+      }
+      return;
+    }
+    while (
+      !disposed &&
+      change === cliChange &&
+      (loading ||
+        connectionBusy ||
+        setupTerminals ||
+        guidedSetup.busy ||
+        (cli && !cli.idle) ||
+        [...tabs.values()].some(
+          (tab) =>
+            tab.session.sending || tab.session.sendStarting || tab.session.busy,
+        ))
+    )
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    if (disposed || change !== cliChange) return;
+    const previous = cli;
+    cli = undefined;
+    cliSelection = undefined;
+    version = "";
+    ++generation;
+    loadAbort?.abort();
+    active = undefined;
+    allProfiles = [];
+    availableProfiles = [];
+    chats = [];
+    cursor = "";
+    for (const tab of tabs.values()) {
+      drafts.set(tab.session.scope, tab.session.draft);
+      tab.panel?.dispose();
+      tab.session.dispose();
+    }
+    tabs.clear();
+    cliDetailsChanged.fire();
+    // Clear stale API/session references synchronously before awaiting shutdown.
+    const closing = previous?.close();
+    void refresh();
+    await closing;
+  }
   let stopping: Promise<void> | undefined;
   const stop = () => {
     if (stopping) return stopping;
     disposed = true;
+    ++cliChange;
+    clearInterval(upgradeTimer);
+    cliUpgrade.cancel();
     recipientPicker?.dispose();
     clearTimeout(sidebarTimer);
     loadAbort?.abort();
@@ -1658,6 +2229,15 @@ export async function activate(context: vscode.ExtensionContext) {
       },
       openFirst: () => openChat(chats[0]),
       connection: () => ({ state: connectionState, busy: connectionBusy }),
+      cliDetails: () => ({
+        version,
+        source: cliSelection?.source,
+        rows: cliRows().map((item) => ({
+          label: item.label,
+          description: item.description,
+          command: item.command?.command,
+        })),
+      }),
       sidebarReady: () => sidebar.ready,
       sidebarLayout: () => sidebar.layout,
       accounts: () => ({

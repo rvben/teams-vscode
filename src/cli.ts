@@ -31,6 +31,18 @@ export interface Api {
 }
 export class Cli implements Api {
   private commands = new Set<string>();
+  private replacement?: Cli;
+  private calls = 0;
+  get idle() {
+    return this.calls === 0;
+  }
+  /** Synchronous: a new call cannot slip between the idle check and handoff. */
+  handoff(next: Cli): boolean {
+    if (!this.idle || this.closed || this.replacement || next.closed)
+      return false;
+    this.replacement = next;
+    return true;
+  }
   private lifetime?: BrowserLifetime;
   private keepAlive = false;
   private starting?: Promise<void>;
@@ -101,6 +113,18 @@ export class Cli implements Api {
     private prefix: readonly string[] = [],
   ) {}
   async call(args: string[], options: CallOptions = {}): Promise<unknown> {
+    if (this.replacement) return this.replacement.call(args, options);
+    this.calls++;
+    try {
+      return await this.perform(args, options);
+    } finally {
+      this.calls--;
+    }
+  }
+  private async perform(
+    args: string[],
+    options: CallOptions,
+  ): Promise<unknown> {
     try {
       return await this.callOnce(args, options);
     } catch (error) {

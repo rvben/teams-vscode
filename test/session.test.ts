@@ -294,3 +294,76 @@ test("pre-submission lifecycle failures release the send claim and retain the dr
         assert.equal(session.recovery, "connection");
     }
   }));
+
+test("send preflight blocks a second submission before its durable claim finishes", () =>
+  fixture(async (store) => {
+    const claim = store.claim.bind(store);
+    let release!: () => void;
+    let claims = 0,
+      sends = 0;
+    store.claim = async (scope) => {
+      claims++;
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      return claim(scope);
+    };
+    const c = new Conversation(
+      {
+        call: async (args) => {
+          if (args.includes("send")) {
+            sends++;
+            return { id: "sent" };
+          }
+          return { items: [] };
+        },
+      },
+      profile,
+      "c",
+      "scope",
+      store,
+      () => {},
+    );
+    c.draft = "Synthetic";
+    const work = c.send(true);
+    assert(c.sendStarting);
+    await c.send(true);
+    assert.equal(claims, 1);
+    release();
+    await work;
+    assert.equal(sends, 1);
+    assert.equal(c.sendStarting, false);
+  }));
+
+test("closing during send preflight clears its unused claim without submitting", () =>
+  fixture(async (store) => {
+    const claim = store.claim.bind(store);
+    let release!: () => void;
+    store.claim = async (scope) => {
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      return claim(scope);
+    };
+    let calls = 0;
+    const c = new Conversation(
+      {
+        call: async () => {
+          calls++;
+          return {};
+        },
+      },
+      profile,
+      "c",
+      "scope",
+      store,
+      () => {},
+    );
+    c.draft = "Synthetic";
+    const work = c.send(true);
+    c.dispose();
+    release();
+    await work;
+    assert.equal(calls, 0);
+    assert.equal(await store.read("scope"), undefined);
+  }));

@@ -15,7 +15,7 @@ This is an independent project and is not affiliated with Microsoft.
 ## Install locally
 
 1. Download the VSIX from the [experimental release](https://github.com/rvben/teams-vscode/releases). For an integrity check, compare its SHA-256 hash with the attached `SHA256SUMS`. Install it using **Extensions → … → Install from VSIX**.
-2. Open the Teams activity-bar view. Select an existing CLI executable, or choose **Download verified CLI** to download version 0.2.3 from the CLI's official GitHub release. The extension checks the archive against the release's SHA-256 checksum before extracting it into extension storage.
+2. Open the Teams activity-bar view. Select an existing CLI executable, or choose **Download verified CLI** to download version 0.2.3 from the CLI's official GitHub release. The extension checks the archive against the release checksum pinned in the extension before extracting it into extension storage.
 3. In **Chats → …**, choose **Guided Account Setup**. A dedicated VS Code terminal runs the CLI’s setup wizard, checks which connections work on this computer, and walks through account choice and sign-in. On success, the extension selects the resulting profile and refreshes Chats. You can also use **Connect Teams Desktop** in **Connection** for the signed-in desktop app, or **Advanced Profile Setup** for Graph and manual profiles.
 4. Open a conversation from the sidebar or use **Teams: Find Conversation**.
 
@@ -68,11 +68,18 @@ This feature needs a CLI build advertising `people search` and `chats create` in
 
 Drafts stay in memory across refreshes and closing/reopening a tab. They are lost when the extension host exits. Message bodies are not written to draft files or logs. A small journal containing operation IDs, timestamps, and optional client message IDs preserves uncertain-send protection across restarts and multiple VS Code windows. Journal filenames hash the profile/config/chat scope. No send is retried automatically.
 
+The **CLI** section in the Teams sidebar shows the active version and who manages it; hover for its executable path. **Teams: Manage CLI** lets you select an executable, use the recommended verified download, or turn automatic managed updates on or off.
+
+Turning automatic CLI updates off keeps the version already in use. The CLI section shows the actual executable, including an automatic upgrade when the CLI path setting still names its original download. Previously verified local copies are checked against their saved checksum and validated before reuse.
+
+Copies downloaded by the extension, including older downloads already selected in settings, automatically upgrade to the version tested with the installed extension. This is a pinned version, not an arbitrary latest release, and newer installations are never automatically downgraded. Downloads are checked against SHA-256 hashes embedded in the extension and checked for the expected version and browser cleanup support on supported hosts before selection. A failed update keeps the current CLI. Switching waits for sends, account setup, and other current work to finish; managed upgrades preserve open conversations, drafts, and send-status guards. Executables you installed elsewhere or supplied through PATH remain under your control. Choose **Use recommended CLI** to switch explicitly.
+
 ## Settings and troubleshooting
 
 | Setting                              | Default | Purpose                                                                                                                        |
 | ------------------------------------ | ------- | ------------------------------------------------------------------------------------------------------------------------------ |
 | `teamsCompanion.cliPath`             | empty   | Absolute executable path; otherwise PATH or the verified download. Machine-scoped, never a workspace command.                  |
+| `teamsCompanion.autoUpdateCli`       | `true`  | Upgrade extension-managed CLI copies to the tested version when idle. External installations are preserved.                    |
 | `teamsCompanion.repliesEnabled`      | `false` | Permit replies when the CLI profile allows them.                                                                               |
 | `teamsCompanion.pollIntervalSeconds` | `30`    | Visible sidebar and conversation refresh interval, 10–300 seconds. Hidden views pause polling; conversation failures back off. |
 | `teamsCompanion.sidebarLayout`       | `teams` | Choose Teams, Compact, or Comfortable sidebar rows.                                                                            |
@@ -119,7 +126,7 @@ from a terminal also keeps that session running. Native Teams is unaffected.
 
 Enable **Teams Companion: Keep Browser Running** to preserve newly started browser
 sessions after exit. You can always use **Disconnect browser** to close one. With
-an older CLI, the Connection view explains that manual disconnect is required.
+an older CLI, the CLI section explains that an update is needed for automatic cleanup.
 
 The extension uses a small CLI supervisor with a private stdin pipe. Closing the
 pipe triggers the CLI's verified browser cleanup; no process-name matching or broad
