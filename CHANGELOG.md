@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.1.4](https://github.com/rvben/teams-vscode/compare/v0.1.3...v0.1.4) - 2026-10-16
+
 ### Fixed
 
 - Close extension-managed browsers when the last window exits or crashes, coordinating shared windows, editor reloads and active CLI work while retaining saved sign-in.
