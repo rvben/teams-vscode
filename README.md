@@ -15,7 +15,7 @@ This is an independent project and is not affiliated with Microsoft.
 ## Install locally
 
 1. Download the VSIX from the [experimental release](https://github.com/rvben/teams-vscode/releases). For an integrity check, compare its SHA-256 hash with the attached `SHA256SUMS`. Install it using **Extensions → … → Install from VSIX**.
-2. Open the Teams activity-bar view. Select an existing CLI executable, or choose **Download verified CLI** to download version 0.2.2 from the CLI's official GitHub release. The extension checks the archive against the release's SHA-256 checksum before extracting it into extension storage.
+2. Open the Teams activity-bar view. Select an existing CLI executable, or choose **Download verified CLI** to download version 0.2.3 from the CLI's official GitHub release. The extension checks the archive against the release's SHA-256 checksum before extracting it into extension storage.
 3. In **Chats → …**, choose **Guided Account Setup**. A dedicated VS Code terminal runs the CLI’s setup wizard, checks which connections work on this computer, and walks through account choice and sign-in. On success, the extension selects the resulting profile and refreshes Chats. You can also use **Connect Teams Desktop** in **Connection** for the signed-in desktop app, or **Advanced Profile Setup** for Graph and manual profiles.
 4. Open a conversation from the sidebar or use **Teams: Find Conversation**.
 
@@ -106,3 +106,22 @@ The UI suite uses Playwright Chromium; install it with `npx playwright install c
 The VSIX includes only bundled runtime code, theme stylesheets, the activity-bar SVG, this README, changelog, licenses, and manifest. Tests, synthetic data, local research, design documents, and screenshots are excluded. Packaging is local; it does not publish to the Marketplace.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for test and release instructions, [SECURITY.md](SECURITY.md) for private vulnerability reports, and [GitHub issues](https://github.com/rvben/teams-vscode/issues) for bugs and feature requests. The project is [MIT licensed](LICENSE).
+
+### Browser lifetime
+
+With Teams CLI 0.2.3 or newer, which supports `desktop supervise`, browsers started by Teams Companion
+close after their last extension user exits, including when the extension host
+crashes. A 15-second grace period lets a reloaded window reclaim its browser.
+Multiple VS Code windows share the browser safely, and active CLI commands
+can finish before cleanup. Saved sign-in is retained. Sessions started separately,
+or by older CLI versions, stay running; explicitly running `desktop connect`
+from a terminal also keeps that session running. Native Teams is unaffected.
+
+Enable **Teams Companion: Keep Browser Running** to preserve newly started browser
+sessions after exit. You can always use **Disconnect browser** to close one. With
+an older CLI, the Connection view explains that manual disconnect is required.
+
+The extension uses a small CLI supervisor with a private stdin pipe. Closing the
+pipe triggers the CLI's verified browser cleanup; no process-name matching or broad
+process-tree kills are used. A supervisor forcibly killed along with the browser's
+other processes cannot perform cleanup; `desktop recover` remains available.

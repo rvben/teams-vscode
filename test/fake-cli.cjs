@@ -19,9 +19,13 @@ if (a.includes("schema"))
           args: [{ name: "--desktop-client" }, { name: "--auto-start" }],
         },
         { name: "desktop login" },
+        { name: "desktop supervise" },
       ]),
   });
-else if (
+else if (has("desktop", "supervise")) {
+  out({ protocol: 1, client: "1234567890abcdef1234567890abcdef" });
+  process.stdin.resume();
+} else if (
   process.env.TEAMS_COMPANION_TEST_MIXED_ACCOUNTS === "1" &&
   a[a.indexOf("--profile") + 1] === "personal-demo" &&
   (has("chats", "list") || has("messages", "list"))

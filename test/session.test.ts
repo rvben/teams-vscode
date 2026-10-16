@@ -261,3 +261,36 @@ test("An ambiguous account offers account selection and clears after a successfu
     assert.equal(session.recovery, undefined);
     assert.equal(session.messages.length, 1);
   }));
+
+test("pre-submission lifecycle failures release the send claim and retain the draft", () =>
+  fixture(async (store) => {
+    for (const kind of [
+      "browser_supervision",
+      "desktop_busy",
+      "desktop_disconnected",
+      "desktop_prerequisites",
+    ]) {
+      const api: Api = {
+        async call(args) {
+          if (args.includes("send")) throw new CliError(kind, false);
+          return { items: [] };
+        },
+      };
+      const session = new Conversation(
+        api,
+        profile,
+        "chat",
+        "scope",
+        store,
+        () => {},
+      );
+      session.draft = "Synthetic reply";
+      await session.send(true);
+      assert.equal(session.pending, undefined);
+      assert.equal(await store.read("scope"), undefined);
+      assert.equal(session.draft, "Synthetic reply");
+      assert(!session.note.includes("outcome unknown"));
+      if (kind === "desktop_disconnected")
+        assert.equal(session.recovery, "connection");
+    }
+  }));

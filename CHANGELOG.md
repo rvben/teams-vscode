@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Close extension-managed browsers when the last window exits or crashes, coordinating shared windows, editor reloads and active CLI work while retaining saved sign-in.
+- Recover killed supervisors and classify pre-submission lifecycle failures safely, preserving drafts without automatically retrying sends.
+
+### Added
+
+- Add `teamsCompanion.keepBrowserRunning` to opt out of automatic shutdown for newly started browser sessions.
+
+### Changed
+
+- Download verified Teams CLI 0.2.3 with browser supervision and verified helper cleanup. Older CLIs retain manual disconnect behavior.
+
 ## [0.1.3](https://github.com/rvben/teams-vscode/compare/v0.1.2...v0.1.3) - 2026-10-15
 
 ### Added

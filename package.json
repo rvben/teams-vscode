@@ -413,6 +413,12 @@
           "default": true,
           "scope": "application",
           "description": "Check public GitHub release metadata at most once a day when Teams Companion activates. Includes experimental releases for this experimental extension. No Teams account data is sent. Updates are installed manually from the release page."
+        },
+        "teamsCompanion.keepBrowserRunning": {
+          "type": "boolean",
+          "default": false,
+          "scope": "application",
+          "description": "Keep browsers started by Teams Companion running after its last window exits. Applies to newly started sessions. Saved sign-in is retained either way; browsers started separately stay running."
         }
       }
     }

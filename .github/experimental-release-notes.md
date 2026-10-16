@@ -13,10 +13,12 @@ Teams conversations inside VS Code, available as an **experimental pre-release**
 - Three sidebar layouts, local avatars, previews, search, and account selection.
 - Guided account setup in a dedicated VS Code terminal, using the CLI’s browser, account and port checks.
 - Browser sign-in, saved-session reconnect, disconnect and recovery controls.
+- Automatic cleanup after the last extension window exits, including crashed sessions and hung browser helpers. Saved sign-in is retained; independently started browsers stay running.
+- Optional `teamsCompanion.keepBrowserRunning` setting for persistent browser sessions.
 - Optional daily GitHub update notifications, manual update checks and per-version skipping. Updates remain manually installed.
 - Recovery for a closed desktop session that left a stale active connection record.
 - Durable guards for uncertain sends and conversation creation; no automatic retries.
-- Verified Teams CLI 0.2.2 downloads for supported hosts.
+- Verified Teams CLI 0.2.3 downloads for supported hosts.
 
 ## Current limits
 

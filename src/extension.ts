@@ -50,6 +50,10 @@ interface Tab {
   ready?: boolean;
 }
 const settings = () => vscode.workspace.getConfiguration("teamsCompanion");
+let shutdown: (() => Promise<void>) | undefined;
+export async function deactivate(): Promise<void> {
+  await shutdown?.();
+}
 export async function activate(context: vscode.ExtensionContext) {
   const output = vscode.window.createOutputChannel("Teams Companion");
   context.subscriptions.push(output);
@@ -91,6 +95,7 @@ export async function activate(context: vscode.ExtensionContext) {
   );
   let sidebarTimer: NodeJS.Timeout | undefined;
   let disposed = false;
+  const usedClis = new Set<Cli>();
   const tabs = new Map<string, Tab>();
   const drafts = new Map<string, string>();
   const connectionView = vscode.window.createTreeView<never>(
@@ -210,7 +215,15 @@ export async function activate(context: vscode.ExtensionContext) {
           ? [process.env.TEAMS_COMPANION_TEST_FIXTURE]
           : [];
       const candidate = new Cli(executable, log, prefix);
-      version = await candidate.verify();
+      usedClis.add(candidate);
+      try {
+        version = await candidate.verify();
+        if (disposed) throw new CliError("cancelled");
+      } catch (error) {
+        await candidate.close();
+        usedClis.delete(candidate);
+        throw error;
+      }
       cli = candidate;
       return candidate;
     })();
@@ -252,6 +265,8 @@ export async function activate(context: vscode.ExtensionContext) {
   function showConnection(state: string) {
     connectionState = state;
     renderSidebar();
+    if (!browserConnection || state !== "connected")
+      connectionView.message = undefined;
     connectionView.description = active
       ? `${active.accountLabel ?? active.name} · ${active.backend === "desktop" ? (browserConnection ? "Browser" : "Desktop") : "Graph"}`
       : undefined;
@@ -261,14 +276,20 @@ export async function activate(context: vscode.ExtensionContext) {
       state,
     );
   }
-  async function connectionConfig(profile = active) {
-    return profile?.backend === "desktop"
-      ? obj(
-          await (
-            await getCli()
-          ).call(["config", "show"], { profile: profile.name }),
-        )
-      : {};
+  async function superviseBrowser(api: Cli) {
+    if (disposed) throw new CliError("cancelled");
+    await api.startBrowserLifetime(
+      settings().get<boolean>("keepBrowserRunning", false),
+    );
+  }
+  async function connectionConfig(profile = active, supervise = true) {
+    if (profile?.backend !== "desktop") return {};
+    const api = await getCli();
+    const config = obj(
+      await api.call(["config", "show"], { profile: profile.name }),
+    );
+    if (supervise && isBrowser(config)) await superviseBrowser(api);
+    return config;
   }
   async function readConnection(selected: Profile | undefined, run: number) {
     if (!selected || selected.backend !== "desktop") {
@@ -297,9 +318,19 @@ export async function activate(context: vscode.ExtensionContext) {
       summary();
       const status = await api.call(["desktop", "status"], {
         profile: selected.name,
-        timeout: 15_000,
+        timeout: 30_000,
       });
-      if (run === generation) showConnection(desktopState(status));
+      if (run === generation) {
+        showConnection(desktopState(status));
+        if (browserConnection && connectionState === "connected") {
+          connectionView.message =
+            obj(obj(status).management).auto_close === true
+              ? "Closes after its last Teams Companion window exits. Your sign-in is saved."
+              : api.browserLifetimeSupported
+                ? "Runs until you disconnect it. Your sign-in is saved."
+                : "This CLI keeps the browser running after VS Code exits. Use Disconnect browser before exiting; automatic cleanup requires a CLI with browser supervision support.";
+        }
+      }
     } catch {
       if (run === generation) showConnection("unavailable");
     }
@@ -1037,7 +1068,7 @@ export async function activate(context: vscode.ExtensionContext) {
     },
     confirm: async (action, profile) => {
       if (action === "recover") return true;
-      const config = await connectionConfig(profile);
+      const config = await connectionConfig(profile, action === "connect");
       const browser = isBrowser(config);
       const label =
         action === "connect"
@@ -1063,7 +1094,7 @@ export async function activate(context: vscode.ExtensionContext) {
     select: selectProfile,
     run: async (action, profile) => {
       showConnection("busy");
-      const config = await connectionConfig(profile);
+      const config = await connectionConfig(profile, action === "connect");
       const label = isBrowser(config) ? "browser" : "desktop";
       await vscode.window.withProgress(
         {
@@ -1150,6 +1181,7 @@ export async function activate(context: vscode.ExtensionContext) {
         );
         return;
       }
+      await superviseBrowser(api);
       let terminal: vscode.Terminal | undefined;
       let finish!: (code: number | undefined) => void;
       const finished = new Promise<number | undefined>((resolve) => {
@@ -1168,6 +1200,7 @@ export async function activate(context: vscode.ExtensionContext) {
               ? "Teams account setup"
               : "Teams browser sign-in",
           shellPath: api.executable,
+          env: api.environment,
           shellArgs: [
             ...(context.extensionMode === vscode.ExtensionMode.Test &&
             process.env.TEAMS_COMPANION_TEST_FIXTURE
@@ -1544,6 +1577,7 @@ export async function activate(context: vscode.ExtensionContext) {
       },
       () => installCli(context.globalStorageUri.fsPath),
     );
+    void cli?.close();
     cli = undefined;
     await settings().update(
       "cliPath",
@@ -1555,6 +1589,7 @@ export async function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     vscode.workspace.onDidChangeConfiguration((e) => {
       if (e.affectsConfiguration("teamsCompanion.cliPath")) {
+        void cli?.close();
         cli = undefined;
         ++generation;
         loadAbort?.abort();
@@ -1582,17 +1617,27 @@ export async function activate(context: vscode.ExtensionContext) {
       }
     }),
   );
+  let stopping: Promise<void> | undefined;
+  const stop = () => {
+    if (stopping) return stopping;
+    disposed = true;
+    recipientPicker?.dispose();
+    clearTimeout(sidebarTimer);
+    loadAbort?.abort();
+    for (const tab of tabs.values()) {
+      clearTimeout(tab.timer);
+      tab.session.dispose();
+      tab.panel?.dispose();
+    }
+    stopping = Promise.all([...usedClis].map((api) => api.close())).then(
+      () => {},
+    );
+    return stopping;
+  };
+  shutdown = stop;
   context.subscriptions.push({
     dispose() {
-      disposed = true;
-      recipientPicker?.dispose();
-      clearTimeout(sidebarTimer);
-      loadAbort?.abort();
-      for (const tab of tabs.values()) {
-        clearTimeout(tab.timer);
-        tab.session.dispose();
-        tab.panel?.dispose();
-      }
+      void stop();
     },
   });
   void refresh();

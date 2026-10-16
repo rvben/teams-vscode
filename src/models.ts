@@ -180,6 +180,12 @@ export function friendly(kind: string): string {
       "Teams Desktop could not complete this request. Check the connection, then refresh.",
     desktop_account_ambiguous:
       "More than one Teams account is available. Choose Personal or Work or school for this connection.",
+    browser_supervision:
+      "Automatic browser cleanup could not start. Refresh the connection or check the selected CLI before retrying.",
+    desktop_prerequisites:
+      "The Teams browser is not ready. Check your browser installation or run Guided Account Setup before retrying.",
+    desktop_busy:
+      "Another browser connection command is running. Wait a moment and retry.",
     desktop_disconnected:
       "The Teams Desktop connection is closed. Connect again to load messages.",
     desktop_no_window:

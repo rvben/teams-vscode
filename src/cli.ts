@@ -1,3 +1,8 @@
+import {
+  BrowserLifetime,
+  BROWSER_CLIENT_ENV,
+  BROWSER_KEEP_ALIVE_ENV,
+} from "./browser-lifetime";
 import { spawn } from "node:child_process";
 import { obj, str, friendly } from "./models";
 
@@ -25,13 +30,106 @@ export interface Api {
   call(args: string[], options?: CallOptions): Promise<unknown>;
 }
 export class Cli implements Api {
+  private commands = new Set<string>();
+  private lifetime?: BrowserLifetime;
+  private keepAlive = false;
+  private starting?: Promise<void>;
+  private clientToken?: string;
+  private closed = false;
+  get environment(): NodeJS.ProcessEnv {
+    const env = { ...process.env };
+    delete env[BROWSER_CLIENT_ENV];
+    delete env[BROWSER_KEEP_ALIVE_ENV];
+    return {
+      ...env,
+      ...(this.clientToken
+        ? {
+            [BROWSER_CLIENT_ENV]: this.clientToken,
+            [BROWSER_KEEP_ALIVE_ENV]: this.keepAlive ? "1" : "0",
+          }
+        : {}),
+    };
+  }
+  get browserLifetimeSupported() {
+    return this.commands.has("desktop supervise");
+  }
+  startBrowserLifetime(keepAlive: boolean): Promise<void> {
+    if (process.platform === "win32" || !this.browserLifetimeSupported)
+      return Promise.resolve();
+    if (this.closed) return Promise.reject(new CliError("cancelled"));
+    this.keepAlive = keepAlive;
+    if (this.lifetime?.running) return this.starting!;
+    if (this.lifetime) {
+      void this.lifetime.close(0);
+      this.lifetime = undefined;
+      this.starting = undefined;
+      this.clientToken = undefined;
+    }
+    const lifetime = new BrowserLifetime(
+      this.executable,
+      this.prefix,
+      keepAlive,
+    );
+    this.lifetime = lifetime;
+    this.starting = lifetime.ready
+      .then((token) => {
+        if (this.closed || !lifetime.running || this.lifetime !== lifetime)
+          throw new CliError("cancelled");
+        this.clientToken = token;
+      })
+      .catch(async (error) => {
+        await lifetime.close();
+        if (this.lifetime === lifetime) {
+          this.lifetime = undefined;
+          this.starting = undefined;
+          this.clientToken = undefined;
+        }
+        throw error instanceof CliError
+          ? error
+          : new CliError("browser_supervision");
+      });
+    return this.starting;
+  }
+  async close(): Promise<void> {
+    this.closed = true;
+    // The detached supervisor owns cleanup and the reload grace period.
+    await this.lifetime?.close(0);
+  }
   constructor(
     readonly executable: string,
     private log: (event: string) => void = () => {},
     private prefix: readonly string[] = [],
   ) {}
-  call(args: string[], options: CallOptions = {}): Promise<unknown> {
-    if (options.signal?.aborted)
+  async call(args: string[], options: CallOptions = {}): Promise<unknown> {
+    try {
+      return await this.callOnce(args, options);
+    } catch (error) {
+      if (
+        !options.mutation &&
+        error instanceof CliError &&
+        error.kind === "browser_supervision" &&
+        this.lifetime &&
+        !this.lifetime.running &&
+        !this.closed &&
+        !options.signal?.aborted
+      ) {
+        await this.startBrowserLifetime(this.keepAlive);
+        return this.callOnce(args, options);
+      }
+      throw error;
+    }
+  }
+  private async callOnce(
+    args: string[],
+    options: CallOptions,
+  ): Promise<unknown> {
+    const desktop = args.indexOf("desktop");
+    const cleanup =
+      desktop >= 0 &&
+      ["disconnect", "recover"].includes(args[desktop + 1] ?? "");
+    const metadata = ["schema", "profile", "config"].includes(args[0] ?? "");
+    if (!cleanup && !metadata) await this.starting;
+    if (this.closed || options.signal?.aborted)
       return Promise.reject(new CliError("cancelled"));
     return new Promise((resolve, reject) => {
       const argv = [
@@ -44,7 +142,16 @@ export class Cli implements Api {
         shell: false,
         windowsHide: true,
         stdio: ["pipe", "pipe", "pipe"],
-        env: options.env ?? process.env,
+        env: {
+          ...this.environment,
+          ...options.env,
+          ...(cleanup
+            ? {
+                [BROWSER_CLIENT_ENV]: undefined,
+                [BROWSER_KEEP_ALIVE_ENV]: undefined,
+              }
+            : {}),
+        },
       });
       let stdout: Buffer[] = [],
         stderr: Buffer[] = [],
@@ -119,6 +226,10 @@ export class Cli implements Api {
           "tty_required",
           "confirmation_required",
           "unsupported",
+          "desktop_busy",
+          "desktop_disconnected",
+          "desktop_prerequisites",
+          "browser_supervision",
         ]);
         const kind = classifyError(str(e.kind) || "transport", str(e.message));
         finish(
@@ -153,6 +264,7 @@ export class Cli implements Api {
     const names = Array.isArray(schema.commands)
       ? schema.commands.map((c) => str(obj(c).name))
       : [];
+    this.commands = new Set(names);
     for (const name of [
       "profile list",
       "chats list",
@@ -183,6 +295,20 @@ export function parseError(stderr: string): Record<string, unknown> {
 // Map only known, non-identifying CLI diagnostics. Raw error text stays out of UI/logs.
 export function classifyError(kind: string, detail: string): string {
   if (kind !== "desktop_error") return kind;
+  if (
+    detail.startsWith(
+      "Browser prerequisites are not ready; no session access was attempted:",
+    )
+  )
+    return "desktop_prerequisites";
+  if (detail.startsWith("another browser connection command is running"))
+    return "desktop_busy";
+  if (
+    detail.startsWith("browser lease could not be established:") ||
+    detail.startsWith("the browser supervisor has closed") ||
+    detail.startsWith("invalid browser supervisor token")
+  )
+    return "browser_supervision";
   if (detail.startsWith("Multiple Teams accounts are available;"))
     return "desktop_account_ambiguous";
   if (detail.startsWith("No endpoint on this port:"))
